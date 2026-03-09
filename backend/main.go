@@ -15,12 +15,6 @@ import (
 
 var db *sql.DB
 
-type TestItem struct {
-	ID        int    `json:"id"`
-	Name      string `json:"name"`
-	CreatedAt string `json:"created_at"`
-}
-
 func main() {
 	dsn := os.Getenv("DATABASE_URL")
 	if dsn == "" {
@@ -48,9 +42,6 @@ func main() {
 		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 	})
 
-	r.Get("/test", getTests)
-	r.Post("/test", createTest)
-
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8081"
@@ -71,49 +62,4 @@ func cors(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
-}
-
-func getTests(w http.ResponseWriter, r *http.Request) {
-	rows, err := db.Query("SELECT id, name, created_at FROM test ORDER BY id")
-	if err != nil {
-		http.Error(w, err.Error(), 500)
-		return
-	}
-	defer rows.Close()
-
-	var items []TestItem
-	for rows.Next() {
-		var item TestItem
-		if err := rows.Scan(&item.ID, &item.Name, &item.CreatedAt); err != nil {
-			http.Error(w, err.Error(), 500)
-			return
-		}
-		items = append(items, item)
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(items)
-}
-
-func createTest(w http.ResponseWriter, r *http.Request) {
-	var body struct {
-		Name string `json:"name"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Name == "" {
-		http.Error(w, "name is required", 400)
-		return
-	}
-
-	var item TestItem
-	err := db.QueryRow(
-		"INSERT INTO test (name) VALUES ($1) RETURNING id, name, created_at", body.Name,
-	).Scan(&item.ID, &item.Name, &item.CreatedAt)
-	if err != nil {
-		http.Error(w, err.Error(), 500)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(item)
 }
