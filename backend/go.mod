@@ -1,4 +1,4 @@
-module github.com/hassad/boilerplateSaaS/apps/api
+module github.com/hassad/boilerplateSaaS/backend
 
 go 1.24.4
 
