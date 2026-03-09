@@ -6,10 +6,25 @@ services:
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: cleansaas
     ports:
-      - "5432:5432"
+      - "5433:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql
+
+  dbgate:
+    image: dbgate/dbgate
+    ports:
+      - "8082:3000"
+    environment:
+      CONNECTIONS: con1
+      LABEL_con1: CleanSaaS Local
+      SERVER_con1: db
+      USER_con1: postgres
+      PASSWORD_con1: postgres
+      PORT_con1: 5432
+      ENGINE_con1: postgres@dbgate-plugin-postgres
+    depends_on:
+      - db
 
 volumes:
   pgdata:

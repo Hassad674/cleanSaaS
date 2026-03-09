@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -23,8 +24,9 @@ type TestItem struct {
 func main() {
 	dsn := os.Getenv("DATABASE_URL")
 	if dsn == "" {
-		dsn = "postgres://postgres:postgres@localhost:5432/cleansaas?sslmode=disable"
+		dsn = "postgres://postgres:postgres@localhost:5433/cleansaas?sslmode=disable"
 	}
+	dsn = strings.Replace(dsn, "&channel_binding=require", "", 1)
 
 	var err error
 	db, err = sql.Open("postgres", dsn)
@@ -51,7 +53,7 @@ func main() {
 
 	port := os.Getenv("PORT")
 	if port == "" {
-		port = "8080"
+		port = "8081"
 	}
 
 	log.Printf("API server starting on :%s", port)
