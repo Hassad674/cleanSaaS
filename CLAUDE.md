@@ -166,28 +166,87 @@ Skills are auto-detected: describing what you want is enough. You don't have to 
 
 ## Autonomous work process
 
+### Test tools
+- **Backend**: Go `testing` package + `github.com/stretchr/testify` (assertions, mocks)
+- **Frontend unit**: `vitest` + `@testing-library/react` + `@testing-library/jest-dom`
+- **Frontend E2E**: `playwright` (chromium) — tests in `frontend/e2e/`
+- All must be installed before starting work (see TACHES.md section 0.3)
+
+### Test → Fix → Retest loop (MANDATORY)
+
+Every piece of code you write must be tested. Follow this loop:
+
+```
+1. Write implementation code
+2. Write unit tests for that code
+3. Run tests
+   ├── ALL PASS → continue to next sub-task ✅
+   └── FAIL →
+       4. Read error output carefully
+       5. Fix the bug (in code OR test, whichever is actually wrong)
+       6. Rerun tests
+       (max 3 fix attempts per failing test)
+       Still failing after 3 attempts → blocker policy below
+```
+
+**NEVER commit with failing tests. NEVER delete or skip a test to make the suite pass.**
+
 ### Commit strategy
-- 1 commit per completed feature
-- Before EVERY commit: `go build ./...` + `npx tsc --noEmit` + `go test ./...`
+- 1 commit per completed task (not per sub-step)
+- Before EVERY commit: run the full validation pipeline below
 - Never commit broken code on main
 - Conventional messages: `feat:`, `fix:`, `test:`, `refactor:`, `chore:`, `docs:`
 
-### Validation checklist (per feature)
-1. Backend compiles: `cd backend && go build ./...`
-2. Frontend compiles: `cd frontend && npx tsc --noEmit`
-3. Tests pass: `cd backend && go test ./... -count=1`
-4. E2E tests pass (if Playwright set up): `cd frontend && npx playwright test`
-5. Architecture check: run `/check` mentally or explicitly
-6. No hardcoded colors in frontend (use design tokens)
-7. No cross-feature imports
-8. Migration has both up.sql and down.sql
+### Validation pipeline (run before EVERY commit)
+
+```bash
+# 1. Compilation
+cd backend && go build ./...
+cd frontend && npx tsc --noEmit
+
+# 2. Backend tests
+cd backend && go test ./... -count=1
+
+# 3. Frontend tests (if tests exist)
+cd frontend && npx vitest run
+
+# 4. E2E tests (only after Playwright is set up)
+cd frontend && npx playwright test
+
+# 5. Architecture checks
+# - No hardcoded colors (zinc-, gray-, slate-, white, black in className)
+# - No cross-feature imports in frontend/src/features/
+# - Migration has both .up.sql and .down.sql
+```
+
+ALL steps must pass. If any fails → enter fix loop above → only commit when ALL green.
 
 ### Blocker policy
-If stuck on a bug/issue for more than 30 minutes:
-1. Document it in `BLOCKED.md` at the project root (feature name, what failed, what was tried)
-2. Commit working code so far (if any)
-3. Move to the next task
-4. Come back to blockers at the end if time permits
+
+**A long task is NOT a blocker.** A blocker = same error, 3+ approaches tried, no progress. Stripe taking 2h is normal. Stuck on the same error for 20 min is a blocker.
+
+**Type A — Test failure**: max 3 fix attempts per test → comment `// TODO: fix` → log `BLOCKED-taskX.md` → continue other sub-steps
+
+**Type B — Same error, no progress**: 3+ different approaches tried, nothing works → log `BLOCKED-taskX.md` with error + all approaches → skip only the blocked sub-step (not the whole task) → commit working code → move on
+
+**Type C — Compilation failure**: TOP PRIORITY, 10 min to fix → if unfixable, revert latest changes (`git checkout -- <files>`) → NEVER leave build broken
+
+See `TACHES.md` section 1.4 for the full detailed policy with decision table.
+
+## Compact instructions
+
+When compacting context, prioritize preserving:
+1. The current task being worked on (task number and sub-step)
+2. Any errors or blockers encountered
+3. Files recently created or modified
+4. The test→fix→retest loop state (what's failing, what was tried)
+
+After compaction:
+1. Re-read `TACHES.md` to recover full task list and progress (checkboxes)
+2. Run `git log --oneline -10` to see what was already committed
+3. Run `cd backend && go build ./...` and `cd frontend && npx tsc --noEmit` to verify project compiles
+4. Check for `BLOCKED-*.md` files at project root
+5. Resume from first unchecked task in TACHES.md
 
 ## Environment variables
 

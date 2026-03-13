@@ -192,28 +192,44 @@ Example: "Replace Stripe with Lemon Squeezy"
 
 ## Testing strategy
 
+### Test tools
+- **Assertions**: `github.com/stretchr/testify` — `assert.Equal`, `assert.NoError`, `assert.ErrorIs`
+- **Mocks**: Manual mocks in `backend/mock/` — struct with function fields implementing port interfaces
+- No external mock generators required
+
 ### Unit tests (fast, no dependencies)
 - **domain/*_test.go** — Entity validation, business rules
 - **app/**/service_test.go** — Use cases with mocked ports
 - **pkg/*_test.go** — Utility functions
-- Run: `make test-unit`
+- Run: `go test ./internal/domain/... ./internal/app/... ./pkg/... -v -count=1`
 
 ### Integration tests (need Docker)
 - **adapter/postgres/*_test.go** — Against real PostgreSQL
 - **test/** — Full request flow tests
-- Run: `make test-integration`
+- Run: `go test ./internal/adapter/... -v -count=1 -tags=integration`
 
 ### Rules
 - Test file lives next to the file it tests: `service.go` → `service_test.go`
 - App layer tests mock ALL ports — test logic, not infrastructure
 - Name tests: `TestServiceName_MethodName_Scenario`
 - Table-driven tests for multiple scenarios
+- **NEVER commit with failing tests**
+- **NEVER delete or skip a test to make the suite pass**
 
 ```go
 func TestAuthService_Register_Success(t *testing.T) { ... }
 func TestAuthService_Register_DuplicateEmail(t *testing.T) { ... }
 func TestAuthService_Login_WrongPassword(t *testing.T) { ... }
 ```
+
+### Test → Fix → Retest loop
+
+After writing tests, always run them. If they fail:
+1. Read the error output
+2. Fix the bug (in implementation or test, whichever is actually wrong)
+3. Rerun the tests
+4. Max 3 fix attempts per failing test
+5. If still failing → document in `BLOCKED-taskX.md` at project root, comment test with `// TODO: fix — <reason>`
 
 ## SQL conventions
 
@@ -272,6 +288,14 @@ make migrate-status            # shows version + dirty flag
 make migrate-force VERSION=N   # force-set to version N (the last clean version)
 ```
 Then fix the SQL and re-run `make migrate-up`.
+
+## Blocker policy (backend-specific)
+
+If a Go test or implementation is stuck:
+- **Test failure**: max 3 fix attempts → then comment `// TODO: fix — <reason>` + log in `BLOCKED-taskX.md`
+- **Compilation failure**: TOP PRIORITY — fix immediately or revert last changes with `git checkout -- <files>`
+- **Dependency issue** (go get fails, API changed): log in `BLOCKED-taskX.md`, move to next task
+- **Never leave `go build ./...` broken** — this blocks all other tasks
 
 ## Error handling
 

@@ -272,7 +272,8 @@ The blog is DB-backed (not static markdown). Content is managed from the admin p
 
 ## Testing
 
-- **Components**: `@testing-library/react` — test render + interactions
+- **Test runner**: Vitest (fast, Vite-native)
+- **Components**: Vitest + `@testing-library/react` — test render + interactions
 - **Server Actions**: unit tests mocking the API client
 - **Hooks**: `renderHook` from Testing Library
 - **E2E**: Playwright for critical user flows
@@ -291,12 +292,27 @@ The blog is DB-backed (not static markdown). Content is managed from the admin p
 
 Test file next to source: `login-form.tsx` → `login-form.test.tsx`
 
+### Test → Fix → Retest loop
+After writing any test, run it. If it fails:
+1. Read error output
+2. Fix the bug (implementation or test)
+3. Rerun
+4. Max 3 attempts per failing test
+5. Still failing → comment `// TODO: fix — <reason>` + log in `BLOCKED-taskX.md` at project root
+
+### Blocker policy (frontend-specific)
+- **TypeScript compilation failure** (`npx tsc --noEmit`): TOP PRIORITY — fix immediately or revert
+- **Vitest failure**: 3 fix attempts max → then BLOCKED file
+- **Playwright failure**: check if backend is running, check selectors, 3 attempts → then BLOCKED file
+- **Never leave `npx tsc --noEmit` broken** — this blocks all other tasks
+
 ## Commands
 
 ```bash
 npm run dev           # Start dev server
 npm run build         # Production build
 npm run lint          # ESLint
-npm run test          # Run unit tests
+npx vitest run        # Run unit tests (one-shot)
+npx vitest            # Run unit tests (watch mode)
 npx playwright test   # Run E2E tests
 ```

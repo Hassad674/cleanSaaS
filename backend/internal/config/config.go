@@ -42,7 +42,7 @@ func Load() *Config {
 		Port:                env("PORT", "8081"),
 		DatabaseURL:         cleanDSN(env("DATABASE_URL", "postgres://postgres:postgres@localhost:5433/cleansaas?sslmode=disable")),
 		JWTSecret:           env("JWT_SECRET", "dev-secret-change-me"),
-		FrontendURL:         env("FRONTEND_URL", "http://localhost:3000"),
+		FrontendURL:         env("FRONTEND_URL", "http://localhost:3006"),
 		StripeKey:           env("STRIPE_SECRET_KEY", ""),
 		StripeWebhookSecret: env("STRIPE_WEBHOOK_SECRET", ""),
 		ResendKey:           env("RESEND_API_KEY", ""),

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/hassad/boilerplateSaaS/backend/internal/adapter/postgres"
+	"github.com/hassad/boilerplateSaaS/backend/internal/adapter/resend"
 	appauth "github.com/hassad/boilerplateSaaS/backend/internal/app/auth"
 	appuser "github.com/hassad/boilerplateSaaS/backend/internal/app/user"
 	"github.com/hassad/boilerplateSaaS/backend/internal/config"
@@ -36,8 +37,14 @@ func main() {
 	// JWT
 	jwtMaker := jwt.NewMaker(cfg.JWTSecret)
 
+	// External services
+	var emailSvc *resend.EmailService
+	if cfg.ResendKey != "" {
+		emailSvc = resend.NewEmailService(cfg.ResendKey)
+	}
+
 	// App services
-	authSvc := appauth.NewService(userRepo, nil, jwtMaker) // email service nil for now
+	authSvc := appauth.NewService(userRepo, emailSvc, jwtMaker)
 	userSvc := appuser.NewService(userRepo)
 
 	// Router
