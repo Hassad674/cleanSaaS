@@ -10,6 +10,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	chimw "github.com/go-chi/chi/v5/middleware"
 
+	appai "github.com/hassad/boilerplateSaaS/backend/internal/app/ai"
 	"github.com/hassad/boilerplateSaaS/backend/internal/app/auth"
 	appbilling "github.com/hassad/boilerplateSaaS/backend/internal/app/billing"
 	appstorage "github.com/hassad/boilerplateSaaS/backend/internal/app/storage"
@@ -24,6 +25,7 @@ func NewRouter(
 	userSvc *user.Service,
 	billingSvc *appbilling.Service,
 	storageSvc *appstorage.Service,
+	aiSvc *appai.Service,
 	jwtSecret string,
 	db *sql.DB,
 	logger *slog.Logger,
@@ -93,6 +95,17 @@ func NewRouter(
 			r.Post("/files/upload", storageHandler.Upload)
 			r.Get("/files", storageHandler.List)
 			r.Delete("/files/{id}", storageHandler.Delete)
+		}
+
+		// AI Chat (authenticated)
+		if aiSvc != nil {
+			aiHandler := NewAIHandler(aiSvc)
+			r.Get("/ai/conversations", aiHandler.ListConversations)
+			r.Post("/ai/conversations", aiHandler.CreateConversation)
+			r.Get("/ai/conversations/{id}/messages", aiHandler.GetMessages)
+			r.Post("/ai/conversations/{id}/messages", aiHandler.SendMessage)
+			r.Post("/ai/conversations/{id}/stream", aiHandler.StreamMessage)
+			r.Delete("/ai/conversations/{id}", aiHandler.DeleteConversation)
 		}
 	})
 

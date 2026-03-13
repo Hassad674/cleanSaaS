@@ -653,7 +653,7 @@ Update the checkbox (`[ ]` → `[x]`) in this file after completing each task.
 ### TASK 8: Gemini AI Chat
 > Streaming responses via SSE (Server-Sent Events)
 
-- [ ] **8a. Migration**
+- [x] **8a. Migration**
   - Create `backend/migrations/006_create_conversations.up.sql`:
     ```sql
     CREATE TABLE IF NOT EXISTS conversations (
@@ -677,7 +677,7 @@ Update the checkbox (`[ ]` → `[x]`) in this file after completing each task.
   - Create matching `.down.sql`
   - Apply migration
 
-- [ ] **8b. Backend — Gemini adapter**
+- [x] **8b. Backend — Gemini adapter**
   - Create `backend/internal/adapter/gemini/client.go` — Gemini API client setup using `GEMINI_API_KEY`
   - Create `backend/internal/adapter/gemini/ai.go` — implements `service.AIService`
   - Read existing `port/service/ai.go` and extend if needed:
@@ -689,7 +689,7 @@ Update the checkbox (`[ ]` → `[x]`) in this file after completing each task.
     ```
   - Go dependency: `go get github.com/google/generative-ai-go` (run from backend/)
 
-- [ ] **8c. Backend — service + handler**
+- [x] **8c. Backend — service + handler**
   - Flesh out `app/ai/service.go`: CreateConversation, SendMessage (saves to DB + calls Gemini), GetHistory, ListConversations, DeleteConversation
   - Create `adapter/postgres/conversation.go` — implements `ConversationRepository`
   - Create `handler/ai.go`:
@@ -701,7 +701,7 @@ Update the checkbox (`[ ]` → `[x]`) in this file after completing each task.
     - `DELETE /api/ai/conversations/:id` — delete conversation
   - For SSE: set `Content-Type: text/event-stream`, flush after each chunk
 
-- [ ] **8d. Frontend**
+- [x] **8d. Frontend**
   - Create `frontend/src/features/ai/components/chat-layout.tsx` — sidebar (conversation list) + main (chat area)
   - Create `frontend/src/features/ai/components/conversation-list.tsx` — list of past conversations, new conversation button
   - Create `frontend/src/features/ai/components/chat-messages.tsx` — message bubbles (user = right/primary, AI = left/muted)
@@ -711,11 +711,11 @@ Update the checkbox (`[ ]` → `[x]`) in this file after completing each task.
   - Update `frontend/src/app/(dashboard)/ai/page.tsx` — compose chat layout
   - Streaming: read SSE with `EventSource` or `fetch` + `ReadableStream`, display tokens as they arrive
 
-- [ ] **8e. Wire in main.go**
+- [x] **8e. Wire in main.go**
 
-- [ ] **8f. Test**: AI service tests (mocked Gemini): send message saves to DB, conversation ownership check
+- [x] **8f. Test**: AI service tests (mocked Gemini): send message saves to DB, conversation ownership check
 
-- [ ] **8g. Commit**: `feat: implement Gemini AI chat with streaming and conversation history`
+- [x] **8g. Commit**: `feat: implement Gemini AI chat with streaming and conversation history`
 
 ---
 

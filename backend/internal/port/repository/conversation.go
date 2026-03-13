@@ -12,4 +12,5 @@ type ConversationRepository interface {
 	Update(ctx context.Context, c *ai.Conversation) error
 	Delete(ctx context.Context, id string) error
 	ListByUserID(ctx context.Context, userID string, offset, limit int) ([]*ai.Conversation, int, error)
+	AddMessage(ctx context.Context, conversationID string, msg ai.Message) error
 }

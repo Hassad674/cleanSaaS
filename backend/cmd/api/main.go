@@ -11,8 +11,10 @@ import (
 
 	"github.com/hassad/boilerplateSaaS/backend/internal/adapter/postgres"
 	"github.com/hassad/boilerplateSaaS/backend/internal/adapter/resend"
+	adaptgemini "github.com/hassad/boilerplateSaaS/backend/internal/adapter/gemini"
 	adaptr2 "github.com/hassad/boilerplateSaaS/backend/internal/adapter/r2"
 	adaptstripe "github.com/hassad/boilerplateSaaS/backend/internal/adapter/stripe"
+	appai "github.com/hassad/boilerplateSaaS/backend/internal/app/ai"
 	appauth "github.com/hassad/boilerplateSaaS/backend/internal/app/auth"
 	appbilling "github.com/hassad/boilerplateSaaS/backend/internal/app/billing"
 	appstorage "github.com/hassad/boilerplateSaaS/backend/internal/app/storage"
@@ -69,12 +71,25 @@ func main() {
 		storageSvc = appstorage.NewService(r2Storage, fileRepo)
 	}
 
+	// AI Chat (optional — only if Gemini key set)
+	var aiSvc *appai.Service
+	if cfg.GeminiKey != "" {
+		geminiClient, err := adaptgemini.NewClient(context.Background(), cfg.GeminiKey)
+		if err != nil {
+			logger.Error("failed to create Gemini client", slog.String("error", err.Error()))
+		} else {
+			geminiAI := adaptgemini.NewAIService(geminiClient)
+			conversationRepo := postgres.NewConversationRepository(db)
+			aiSvc = appai.NewService(conversationRepo, geminiAI)
+		}
+	}
+
 	// App services
 	authSvc := appauth.NewService(userRepo, passwordResetRepo, emailVerificationRepo, emailSvc, jwtMaker, cfg.FrontendURL)
 	userSvc := appuser.NewService(userRepo)
 
 	// Router
-	router := handler.NewRouter(authSvc, userSvc, billingSvc, storageSvc, cfg.JWTSecret, db, logger)
+	router := handler.NewRouter(authSvc, userSvc, billingSvc, storageSvc, aiSvc, cfg.JWTSecret, db, logger)
 
 	// HTTP server
 	srv := &http.Server{
