@@ -10,6 +10,7 @@ type SubscriptionRepository interface {
 	Create(ctx context.Context, s *billing.Subscription) error
 	FindByID(ctx context.Context, id string) (*billing.Subscription, error)
 	FindByUserID(ctx context.Context, userID string) (*billing.Subscription, error)
+	FindByStripeID(ctx context.Context, stripeID string) (*billing.Subscription, error)
 	Update(ctx context.Context, s *billing.Subscription) error
 }
 

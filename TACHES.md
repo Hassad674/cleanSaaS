@@ -503,7 +503,7 @@ Update the checkbox (`[ ]` → `[x]`) in this file after completing each task.
 ### TASK 6: Stripe Billing
 > Complex feature — take your time, follow hexagonal strictly
 
-- [ ] **6a. Migration**
+- [x] **6a. Migration**
   - Create `backend/migrations/004_create_billing.up.sql`:
     ```sql
     -- Plans table (seeded, not user-created)
@@ -552,14 +552,14 @@ Update the checkbox (`[ ]` → `[x]`) in this file after completing each task.
   - Create matching `.down.sql` (DROP in reverse order: invoices, subscriptions, plans)
   - Apply migration
 
-- [ ] **6b. Seed plans**
+- [x] **6b. Seed plans**
   - Update `backend/cmd/seed/main.go` to insert 3 plans:
     - Free ($0, basic features)
     - Pro ($19/mo, all features)
     - Enterprise ($49/mo, all features + priority support)
   - Use real Stripe price IDs from test mode OR placeholder strings that will be configured
 
-- [ ] **6c. Backend — port + adapter**
+- [x] **6c. Backend — port + adapter**
   - Read existing `port/service/payment.go` — extend if needed with:
     - `CreateCheckoutSession(ctx, userID, priceID string) (sessionURL string, err error)`
     - `CreatePortalSession(ctx, customerID string) (sessionURL string, err error)`
@@ -572,7 +572,7 @@ Update the checkbox (`[ ]` → `[x]`) in this file after completing each task.
   - Create `adapter/postgres/invoice.go` — implements invoice queries
   - Go dependency: `go get github.com/stripe/stripe-go/v82` (run from backend/)
 
-- [ ] **6d. Backend — billing service**
+- [x] **6d. Backend — billing service**
   - Flesh out `app/billing/service.go`:
     - `GetPlans(ctx) ([]*Plan, error)`
     - `CreateCheckout(ctx, userID, planID string) (string, error)` — creates Stripe checkout session
@@ -580,7 +580,7 @@ Update the checkbox (`[ ]` → `[x]`) in this file after completing each task.
     - `CancelSubscription(ctx, userID string) error`
     - `HandleWebhook(ctx, payload []byte, sig string) error` — processes checkout.session.completed, invoice.paid, customer.subscription.updated/deleted
 
-- [ ] **6e. Backend — handlers**
+- [x] **6e. Backend — handlers**
   - Create `handler/billing.go`:
     - `GET /api/billing/plans` — public, list active plans
     - `POST /api/billing/checkout` — authenticated, create checkout session
@@ -590,22 +590,22 @@ Update the checkbox (`[ ]` → `[x]`) in this file after completing each task.
     - `POST /api/webhooks/stripe` — public (verified by signature), webhook handler
   - DTOs for request/response
 
-- [ ] **6f. Frontend — pricing page**
+- [x] **6f. Frontend — pricing page**
   - Create `frontend/src/features/billing/components/pricing-cards.tsx` — 3 plan cards (Free/Pro/Enterprise)
   - Create `frontend/src/features/billing/actions/billing.ts` — API calls
   - Create `frontend/src/features/billing/hooks/use-billing.ts` — subscription state
   - Update `frontend/src/app/(marketing)/pricing/page.tsx` — compose pricing cards
 
-- [ ] **6g. Frontend — billing settings**
+- [x] **6g. Frontend — billing settings**
   - Create `frontend/src/features/billing/components/subscription-status.tsx` — current plan, next billing date, cancel button
   - Create `frontend/src/features/billing/components/invoice-list.tsx` — list of invoices
   - Create `frontend/src/app/(dashboard)/settings/billing/page.tsx` or add section to settings page
 
-- [ ] **6h. Wire in main.go** — stripe adapter → billing service → handler → router
+- [x] **6h. Wire in main.go** — stripe adapter → billing service → handler → router
 
-- [ ] **6i. Test**: Billing service unit tests (mocked Stripe adapter): create checkout, handle webhook events, cancel
+- [x] **6i. Test**: Billing service unit tests (mocked Stripe adapter): create checkout, handle webhook events, cancel
 
-- [ ] **6j. Commit**: `feat: implement Stripe billing (plans, checkout, subscriptions, webhooks, invoices)`
+- [x] **6j. Commit**: `feat: implement Stripe billing (plans, checkout, subscriptions, webhooks, invoices)`
 
 ---
 

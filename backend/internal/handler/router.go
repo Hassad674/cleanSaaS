@@ -11,6 +11,7 @@ import (
 	chimw "github.com/go-chi/chi/v5/middleware"
 
 	"github.com/hassad/boilerplateSaaS/backend/internal/app/auth"
+	appbilling "github.com/hassad/boilerplateSaaS/backend/internal/app/billing"
 	"github.com/hassad/boilerplateSaaS/backend/internal/app/user"
 	"github.com/hassad/boilerplateSaaS/backend/internal/handler/middleware"
 )
@@ -20,6 +21,7 @@ var startTime = time.Now()
 func NewRouter(
 	authSvc *auth.Service,
 	userSvc *user.Service,
+	billingSvc *appbilling.Service,
 	jwtSecret string,
 	db *sql.DB,
 	logger *slog.Logger,
@@ -52,6 +54,13 @@ func NewRouter(
 		r.Post("/verify-email", authHandler.VerifyEmail)
 	})
 
+	// Public billing routes
+	if billingSvc != nil {
+		billingHandler := NewBillingHandler(billingSvc)
+		r.Get("/billing/plans", billingHandler.GetPlans)
+		r.Post("/webhooks/stripe", billingHandler.HandleWebhook)
+	}
+
 	// Protected routes
 	r.Group(func(r chi.Router) {
 		r.Use(middleware.Auth(jwtSecret))
@@ -65,6 +74,16 @@ func NewRouter(
 		r.Patch("/users/me", userHandler.UpdateProfile)
 		r.Put("/users/me/password", userHandler.ChangePassword)
 		r.Delete("/users/me", userHandler.DeleteAccount)
+
+		// Billing (authenticated)
+		if billingSvc != nil {
+			billingHandler := NewBillingHandler(billingSvc)
+			r.Post("/billing/checkout", billingHandler.CreateCheckout)
+			r.Get("/billing/subscription", billingHandler.GetSubscription)
+			r.Post("/billing/cancel", billingHandler.CancelSubscription)
+			r.Post("/billing/portal", billingHandler.CreatePortalSession)
+			r.Get("/billing/invoices", billingHandler.GetInvoices)
+		}
 	})
 
 	return r

@@ -1,8 +1,7 @@
 export type Plan = {
   id: string;
   name: string;
-  price: number;
-  currency: string;
+  price_cents: number;
   interval: "month" | "year";
   features: string[];
 };
@@ -17,8 +16,9 @@ export type Subscription = {
 
 export type Invoice = {
   id: string;
-  amount: number;
+  amount_cents: number;
   currency: string;
   status: string;
+  invoice_url: string;
   created_at: string;
 };

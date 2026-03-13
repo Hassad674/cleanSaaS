@@ -11,7 +11,9 @@ import (
 
 	"github.com/hassad/boilerplateSaaS/backend/internal/adapter/postgres"
 	"github.com/hassad/boilerplateSaaS/backend/internal/adapter/resend"
+	adaptstripe "github.com/hassad/boilerplateSaaS/backend/internal/adapter/stripe"
 	appauth "github.com/hassad/boilerplateSaaS/backend/internal/app/auth"
+	appbilling "github.com/hassad/boilerplateSaaS/backend/internal/app/billing"
 	appuser "github.com/hassad/boilerplateSaaS/backend/internal/app/user"
 	"github.com/hassad/boilerplateSaaS/backend/internal/config"
 	"github.com/hassad/boilerplateSaaS/backend/internal/handler"
@@ -46,12 +48,22 @@ func main() {
 		emailSvc = resend.NewEmailService(cfg.ResendKey)
 	}
 
+	// Billing repositories + service (optional — only if Stripe key set)
+	var billingSvc *appbilling.Service
+	if cfg.StripeKey != "" {
+		subscriptionRepo := postgres.NewSubscriptionRepository(db)
+		planRepo := postgres.NewPlanRepository(db)
+		invoiceRepo := postgres.NewInvoiceRepository(db)
+		paymentSvc := adaptstripe.NewPaymentService(cfg.StripeKey, cfg.StripeWebhookSecret)
+		billingSvc = appbilling.NewService(userRepo, subscriptionRepo, planRepo, invoiceRepo, paymentSvc, cfg.FrontendURL)
+	}
+
 	// App services
 	authSvc := appauth.NewService(userRepo, passwordResetRepo, emailVerificationRepo, emailSvc, jwtMaker, cfg.FrontendURL)
 	userSvc := appuser.NewService(userRepo)
 
 	// Router
-	router := handler.NewRouter(authSvc, userSvc, cfg.JWTSecret, db, logger)
+	router := handler.NewRouter(authSvc, userSvc, billingSvc, cfg.JWTSecret, db, logger)
 
 	// HTTP server
 	srv := &http.Server{
