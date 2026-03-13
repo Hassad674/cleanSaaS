@@ -1,4 +1,4 @@
-.PHONY: run build test migrate seed mock
+.PHONY: run build test migrate-up migrate-down migrate-down-all migrate-status migrate-force seed mock lint tidy
 
 run:
 	go run cmd/api/main.go
@@ -15,12 +15,27 @@ test-unit:
 test-integration:
 	go test ./test/... -v
 
-migrate:
-	go run cmd/migrate/main.go
+# Migrations
+migrate-up:
+	go run cmd/migrate/main.go up
 
+migrate-down:
+	go run cmd/migrate/main.go down
+
+migrate-down-all:
+	go run cmd/migrate/main.go down-all
+
+migrate-status:
+	go run cmd/migrate/main.go status
+
+migrate-force:
+	go run cmd/migrate/main.go force $(VERSION)
+
+# Seed
 seed:
 	go run cmd/seed/main.go
 
+# Tools
 mock:
 	@echo "Generate mocks from port interfaces"
 

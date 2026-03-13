@@ -220,9 +220,58 @@ func TestAuthService_Login_WrongPassword(t *testing.T) { ... }
 - Pure SQL with `database/sql` + `lib/pq`. No ORM.
 - Parameterized queries ONLY: `$1, $2, $3` — never string concatenation
 - All queries use `context.Context` for timeout/cancellation
-- Migrations: `001_name.up.sql` + `001_name.down.sql`
-- Tables: UUID primary key, `created_at TIMESTAMP DEFAULT NOW()`, `updated_at`
+- Tables: UUID primary key, `created_at TIMESTAMP NOT NULL DEFAULT NOW()`, `updated_at`
 - Use `TEXT` not `VARCHAR`. Index foreign keys.
+- No cross-feature foreign keys (only reference `users` table)
+
+## Migrations
+
+Powered by `golang-migrate`. Migration files live in `backend/migrations/`.
+
+### File naming
+
+```
+migrations/
+├── 001_create_users.up.sql
+├── 001_create_users.down.sql
+├── 002_create_subscriptions.up.sql
+├── 002_create_subscriptions.down.sql
+└── ...
+```
+
+- Numbered sequentially: `001`, `002`, ..., `010`, ...
+- Each migration has an `.up.sql` (apply) and `.down.sql` (rollback)
+- snake_case descriptive name: `create_X`, `add_Y_to_X`, `drop_Z`
+- Feature-scoped: each feature's tables in their own migration files
+
+### Rules
+
+- **Migrations are immutable.** Once applied in prod, NEVER edit — create a new migration instead.
+- **Always write the down migration.** Every `up` must be reversible.
+- **Use `IF NOT EXISTS` / `IF EXISTS`** for idempotent migrations.
+- **Test locally before prod.** `make migrate-up` locally → verify → push → apply to prod.
+- **No cross-feature foreign keys.** Only `REFERENCES users(id)` is allowed.
+
+### Workflow: local → prod
+
+```
+1. Create migration files   →  /add-migration or manually
+2. Test locally              →  make migrate-up (on Docker PostgreSQL)
+3. Verify schema             →  DbGate at localhost:8082
+4. Rollback test             →  make migrate-down (verify down works)
+5. Re-apply                  →  make migrate-up
+6. Commit & push             →  git commit
+7. Apply to prod             →  DATABASE_URL=<neon_url> make migrate-up
+```
+
+### Fixing a broken migration
+
+If a migration fails halfway (dirty state):
+```bash
+make migrate-status            # shows version + dirty flag
+make migrate-force VERSION=N   # force-set to version N (the last clean version)
+```
+Then fix the SQL and re-run `make migrate-up`.
 
 ## Error handling
 
@@ -240,8 +289,12 @@ make build            # Build binary
 make test             # Run all tests
 make test-unit        # Run unit tests only
 make test-integration # Run integration tests
-make migrate          # Run migrations
-make seed             # Seed data
+make migrate-up       # Apply all pending migrations
+make migrate-down     # Rollback last migration
+make migrate-down-all # Rollback ALL migrations
+make migrate-status   # Show current migration version
+make migrate-force    # Force version: make migrate-force VERSION=1
+make seed             # Seed initial data (admin user, plans)
 make mock             # Generate mocks
 make lint             # Run linter
 make tidy             # go mod tidy

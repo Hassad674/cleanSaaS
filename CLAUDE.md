@@ -55,7 +55,8 @@ Before merging any feature, mentally test: "If I delete this feature's entire fo
 cleanSaaS/
 ├── frontend/          → Next.js 15, Tailwind, feature-based (see frontend/CLAUDE.md)
 ├── backend/           → Go + Chi, hexagonal architecture (see backend/CLAUDE.md)
-├── db/                → Shared SQL schema reference
+│   └── migrations/    → SQL migration files (up/down)
+├── .claude/skills/    → Custom Claude Code skills (/add-feature, /check, /add-migration, /test)
 ├── docker-compose.yml → PostgreSQL + DbGate (local DB viewer)
 └── CLAUDE.md          → This file
 ```
@@ -111,12 +112,14 @@ Each major directory has its own CLAUDE.md with specific conventions.
 
 ## Code conventions
 
-### SQL
-- Pure SQL, no ORM, no query builder
-- Migrations: `001_name.up.sql` / `001_name.down.sql`
+### SQL & Migrations
+- Pure SQL, no ORM, no query builder. Powered by `golang-migrate`.
+- Migrations live in `backend/migrations/`: `001_name.up.sql` / `001_name.down.sql`
 - All tables: UUID `id`, `created_at`, `updated_at`
 - Use `TEXT` not `VARCHAR`, index foreign keys
 - No cross-feature foreign keys (only reference `users` table)
+- Migrations are immutable once applied in prod — never edit, only create new ones
+- Workflow: create migration → test locally (`make migrate-up`) → commit → apply to prod (`DATABASE_URL=<prod> make migrate-up`)
 
 ### Git
 - Conventional commits: `feat:`, `fix:`, `refactor:`, `chore:`, `test:`, `docs:`
@@ -128,6 +131,12 @@ Each major directory has its own CLAUDE.md with specific conventions.
 ```bash
 # Database
 docker compose up -d
+
+# Apply migrations
+cd backend && make migrate-up
+
+# Seed data (admin user)
+cd backend && make seed
 
 # Backend
 cd backend && make run

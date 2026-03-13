@@ -1,1 +1,0 @@
--- CleanSaaS database schema
