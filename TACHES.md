@@ -756,7 +756,7 @@ Update the checkbox (`[ ]` → `[x]`) in this file after completing each task.
 ### TASK 10: Blog System (Backend + Public Frontend)
 > Blog content is managed from admin panel (Task 11), but the backend API and public pages are built here
 
-- [ ] **10a. Migration**
+- [x] **10a. Migration**
   - Create `backend/migrations/008_create_blog.up.sql`:
     ```sql
     CREATE TABLE IF NOT EXISTS blog_posts (
@@ -782,13 +782,13 @@ Update the checkbox (`[ ]` → `[x]`) in this file after completing each task.
   - Create matching `.down.sql`
   - Apply migration
 
-- [ ] **10b. Backend — domain + service**
+- [x] **10b. Backend — domain + service**
   - Create `backend/internal/domain/blog/post.go` — BlogPost entity with validation
   - Create `backend/internal/port/repository/blog.go` — BlogRepository interface
   - Create `backend/internal/app/blog/service.go` — CRUD, List (paginated, filterable by tag/status), GetBySlug
   - Create `backend/internal/adapter/postgres/blog.go` — implements BlogRepository
 
-- [ ] **10c. Backend — handlers**
+- [x] **10c. Backend — handlers**
   - Create `backend/internal/handler/blog.go`:
     - `GET /api/blog/posts` — public, list published posts (paginated, filter by tag)
     - `GET /api/blog/posts/:slug` — public, get single post by slug
@@ -798,7 +798,7 @@ Update the checkbox (`[ ]` → `[x]`) in this file after completing each task.
     - `DELETE /api/admin/blog/posts/:id` — admin only, delete post
     - `GET /api/admin/blog/posts` — admin only, list ALL posts including drafts
 
-- [ ] **10d. Frontend — public blog pages**
+- [x] **10d. Frontend — public blog pages**
   - Create `frontend/src/features/blog/components/post-card.tsx` — card with cover image, title, excerpt, tags, date
   - Create `frontend/src/features/blog/components/post-content.tsx` — full post rendering (HTML content from API)
   - Create `frontend/src/features/blog/components/tag-filter.tsx` — clickable tags to filter posts
@@ -806,11 +806,11 @@ Update the checkbox (`[ ]` → `[x]`) in this file after completing each task.
   - Update `frontend/src/app/(marketing)/blog/page.tsx` — blog listing
   - Create `frontend/src/app/(marketing)/blog/[slug]/page.tsx` — individual post page with SEO metadata
 
-- [ ] **10e. Seed example posts** — Add 2-3 example blog posts in `cmd/seed/main.go` to demonstrate the blog
+- [x] **10e. Seed example posts** — Add 2-3 example blog posts in `cmd/seed/main.go` to demonstrate the blog
 
-- [ ] **10f. Wire in main.go**
+- [x] **10f. Wire in main.go**
 
-- [ ] **10g. Test**: Blog service tests: create, list published, get by slug, filter by tag
+- [x] **10g. Test**: Blog service tests: create, list published, get by slug, filter by tag
 
 - [ ] **10h. Commit**: `feat: implement blog system (CRUD API, public pages, tags, SEO)`
 
@@ -819,7 +819,7 @@ Update the checkbox (`[ ]` → `[x]`) in this file after completing each task.
 ### TASK 11: Admin Panel (Separate Vite App)
 > This is a NEW app in `/admin/` directory — NOT part of the Next.js frontend
 
-- [ ] **11a. Scaffold Vite app**
+- [x] **11a. Scaffold Vite app**
   ```bash
   cd /home/hassad/Documents/boilerplateSaaS
   npm create vite@latest admin -- --template react-ts
@@ -829,9 +829,9 @@ Update the checkbox (`[ ]` → `[x]`) in this file after completing each task.
   ```
   Configure Tailwind (vite.config.ts + CSS), set up same design tokens as main frontend (copy CSS variables from frontend globals.css)
 
-- [ ] **11b. Create admin/CLAUDE.md** with conventions for the admin app
+- [x] **11b. Create admin/CLAUDE.md** with conventions for the admin app
 
-- [ ] **11c. Admin app structure**
+- [x] **11c. Admin app structure**
   ```
   admin/src/
   ├── components/     → Shared UI (Sidebar, Header, DataTable, Card)
@@ -841,15 +841,15 @@ Update the checkbox (`[ ]` → `[x]`) in this file after completing each task.
   └── types/          → TypeScript types
   ```
 
-- [ ] **11d. Admin auth** — Login form, verify JWT, check user role is 'admin', redirect if not
+- [x] **11d. Admin auth** — Login form, verify JWT, check user role is 'admin', redirect if not
 
-- [ ] **11e. Dashboard page** — Stats cards (total users, active subscriptions, revenue, posts), PostHog analytics iframe/charts
+- [x] **11e. Dashboard page** — Stats cards (total users, active subscriptions, revenue, posts), PostHog analytics iframe/charts
   - Add PostHog config to `backend/internal/config/config.go` (`PostHogAPIKey`, `PostHogProjectID`, `PostHogHost`)
   - Backend proxy endpoint: `GET /api/admin/analytics` — fetches from PostHog API
 
-- [ ] **11f. Users page** — Table with search, pagination, columns (name, email, role, status, created_at), actions (suspend, ban, make admin)
+- [x] **11f. Users page** — Table with search, pagination, columns (name, email, role, status, created_at), actions (suspend, ban, make admin)
 
-- [ ] **11g. Blog CMS page** — List of all posts (drafts + published), create/edit form with:
+- [x] **11g. Blog CMS page** — List of all posts (drafts + published), create/edit form with:
   - Title, slug (auto-generated from title, editable)
   - Rich text editor (use a simple one: `react-quill` or basic `contentEditable` with toolbar)
   - Cover image upload (to R2 via backend)
@@ -858,7 +858,7 @@ Update the checkbox (`[ ]` → `[x]`) in this file after completing each task.
   - Status toggle: Draft / Published
   - Publish date picker for scheduling
 
-- [ ] **11h. Wire admin routes in backend** — all `/api/admin/*` routes check user role is admin
+- [x] **11h. Wire admin routes in backend** — all `/api/admin/*` routes check user role is admin
 
 - [ ] **11i. Commit**: `feat: implement admin panel (Vite app with users, blog CMS, analytics dashboard)`
 
@@ -866,7 +866,7 @@ Update the checkbox (`[ ]` → `[x]`) in this file after completing each task.
 
 ### TASK 12: Background Jobs & Cron
 
-- [ ] **12a. Job runner infrastructure**
+- [x] **12a. Job runner infrastructure**
   - Create `backend/pkg/jobs/scheduler.go`:
     ```go
     type Job struct {
@@ -881,14 +881,14 @@ Update the checkbox (`[ ]` → `[x]`) in this file after completing each task.
     func (s *Scheduler) Stop()
     ```
 
-- [ ] **12b. Implement jobs**
+- [x] **12b. Implement jobs**
   - Clean expired password reset tokens (every 1 hour)
   - Clean expired email verification tokens (every 1 hour)
   - Log system stats to slog (every 5 minutes) — active connections, goroutine count
 
-- [ ] **12c. Wire in main.go** — create scheduler, register jobs, start in goroutine, stop on shutdown
+- [x] **12c. Wire in main.go** — create scheduler, register jobs, start in goroutine, stop on shutdown
 
-- [ ] **12d. Test**: Test scheduler start/stop, test job execution
+- [x] **12d. Test**: Test scheduler start/stop, test job execution
 
 - [ ] **12e. Commit**: `feat: implement background job scheduler with token cleanup jobs`
 
@@ -896,24 +896,24 @@ Update the checkbox (`[ ]` → `[x]`) in this file after completing each task.
 
 ### TASK 13: SEO
 
-- [ ] **13a. Metadata for all pages**
+- [x] **13a. Metadata for all pages**
   - Update every `page.tsx` in `app/` to export proper `metadata` or `generateMetadata`:
     - title, description, openGraph (title, description, image), twitter card
   - Marketing pages: static metadata
   - Blog posts: dynamic metadata from post data (title, excerpt, cover_image)
   - Dashboard pages: `robots: { index: false }` (don't index authenticated pages)
 
-- [ ] **13b. sitemap.xml**
+- [x] **13b. sitemap.xml**
   - Create `frontend/src/app/sitemap.ts` — Next.js sitemap generation
   - Include: landing page, pricing, blog posts (fetch slugs from API), static pages
   - Exclude: dashboard, auth, admin pages
 
-- [ ] **13c. robots.txt**
+- [x] **13c. robots.txt**
   - Create `frontend/src/app/robots.ts` — Next.js robots generation
   - Allow: /, /blog, /pricing
   - Disallow: /dashboard, /settings, /admin, /api
 
-- [ ] **13d. JSON-LD structured data**
+- [x] **13d. JSON-LD structured data**
   - Landing page: `Organization` schema
   - Blog posts: `Article` schema (author, datePublished, dateModified)
   - Pricing: `Product` schema with `Offer`
@@ -925,7 +925,7 @@ Update the checkbox (`[ ]` → `[x]`) in this file after completing each task.
 ### TASK 14: Unit Tests (Comprehensive)
 > Write tests for ALL domain entities and app services created in previous tasks
 
-- [ ] **14a. Domain tests**
+- [x] **14a. Domain tests**
   - `domain/user/entity_test.go` — validation (empty email, empty name, valid creation)
   - `domain/billing/plan_test.go`, `subscription_test.go`, `invoice_test.go`
   - `domain/ai/conversation_test.go`, `model_test.go`
@@ -933,7 +933,7 @@ Update the checkbox (`[ ]` → `[x]`) in this file after completing each task.
   - `domain/storage/file_test.go`
   - `domain/blog/post_test.go` — slug generation, status validation
 
-- [ ] **14b. App service tests** (all with mocked ports)
+- [x] **14b. App service tests** (all with mocked ports)
   - `app/auth/service_test.go` — register, login, forgot password, reset password, verify email
   - `app/user/service_test.go` — get profile, update profile, change password, delete account
   - `app/billing/service_test.go` — get plans, create checkout, handle webhook events
@@ -942,7 +942,7 @@ Update the checkbox (`[ ]` → `[x]`) in this file after completing each task.
   - `app/notification/service_test.go` — send, mark read, get unread count
   - `app/blog/service_test.go` — create post, list published, get by slug
 
-- [ ] **14c. Generate mocks** — Use manual mocks in `backend/mock/` for all port interfaces (simple struct implementing the interface with function fields). Example:
+- [x] **14c. Generate mocks** — Use manual mocks in `backend/mock/` for all port interfaces (simple struct implementing the interface with function fields). Example:
   ```go
   type MockUserRepository struct {
       CreateFn    func(ctx context.Context, u *user.User) error
@@ -954,13 +954,13 @@ Update the checkbox (`[ ]` → `[x]`) in this file after completing each task.
   }
   ```
 
-- [ ] **14d. Run ALL tests and fix loop**
+- [x] **14d. Run ALL tests and fix loop**
   ```bash
   cd /home/hassad/Documents/boilerplateSaaS/backend && go test ./... -v -count=1
   ```
   Apply fix loop (section 1.3) for any failures. All tests must be green.
 
-- [ ] **14e. Verify coverage**: `go test ./... -cover` — target 80%+ on domain/ and app/ packages. Log coverage in commit message.
+- [x] **14e. Verify coverage**: `go test ./... -cover` — target 80%+ on domain/ and app/ packages. Log coverage in commit message.
 
 - [ ] **14f. Commit**: `test: add comprehensive unit tests for all domain entities and app services`
 
@@ -1006,7 +1006,7 @@ Update the checkbox (`[ ]` → `[x]`) in this file after completing each task.
 ### TASK 16: Landing Page Update
 > LAST TASK — update landing page to showcase all implemented features
 
-- [ ] **16a. Update feature grid**
+- [x] **16a. Update feature grid**
   - Update `frontend/src/features/marketing/components/features-section.tsx`
   - 12 cards with accurate descriptions of what's actually implemented:
     - Auth (email + password, JWT, route guards)
@@ -1022,16 +1022,16 @@ Update the checkbox (`[ ]` → `[x]`) in this file after completing each task.
     - Architecture (hexagonal, feature-based, independently removable)
     - Developer Experience (CLAUDE.md, skills, tests, TypeScript strict)
 
-- [ ] **16b. Create spotlight sections**
+- [x] **16b. Create spotlight sections**
   - Create `frontend/src/features/marketing/components/spotlight-ai.tsx` — AI chat showcase
   - Create `frontend/src/features/marketing/components/spotlight-admin.tsx` — Admin panel showcase
   - Create `frontend/src/features/marketing/components/spotlight-architecture.tsx` — Architecture showcase
 
-- [ ] **16c. Create comparison section**
+- [x] **16c. Create comparison section**
   - Create `frontend/src/features/marketing/components/comparison-section.tsx`
   - Mini table: 4-5 rows comparing CleanSaaS vs OpenSaaS on key differentiators
 
-- [ ] **16d. Update page composition**
+- [x] **16d. Update page composition**
   - Update `frontend/src/app/(marketing)/page.tsx`:
     ```
     Hero → FeatureGrid → SpotlightAI → SpotlightAdmin → SpotlightArchitecture → Stack → Comparison → DX → CTA
