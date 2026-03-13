@@ -30,7 +30,7 @@ export function RegisterForm() {
 
     if (res.data) {
       setToken(res.data.token);
-      router.push("/");
+      router.push("/dashboard");
     }
   }
 

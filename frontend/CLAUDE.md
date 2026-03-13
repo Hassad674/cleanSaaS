@@ -237,20 +237,66 @@ Example: "Add a team management feature"
 5. Create `app/(dashboard)/settings/team/page.tsx` — imports from features/team/
 6. Nothing else touched.
 
+## Landing page structure
+
+The landing page (`app/(marketing)/page.tsx`) showcases all boilerplate features. It follows this section order:
+
+```
+1. HERO — "Ship your SaaS in weeks, not months" + 2 CTAs
+2. FEATURE GRID — 8-12 cards (icon + title + one-liner) covering all modules
+3. SPOTLIGHT: AI Chat — screenshot/mockup + description + "swap provider in 1 line"
+4. SPOTLIGHT: Admin Panel — screenshot/mockup + "PostHog analytics, user management, blog CMS"
+5. SPOTLIGHT: Architecture — hexagonal diagram + "every feature independently removable"
+6. STACK — Technologies used (logos + names)
+7. COMPARISON — Mini table vs OpenSaaS (3-4 key differentiators)
+8. DX — Developer experience selling points
+9. CTA — "Get started in 5 minutes"
+```
+
+Rules:
+- Each section is a separate component in `features/marketing/components/`
+- Page file composes all sections, stays thin
+- Feature grid dynamically reflects actual implemented features
+- Spotlights use real screenshots when available, mockups otherwise
+- All content uses design tokens, no hardcoded colors
+
+## Blog system
+
+The blog is DB-backed (not static markdown). Content is managed from the admin panel.
+
+- **Public pages** (`app/(marketing)/blog/`): Blog listing + individual post pages
+- **Data**: Fetched from Go backend API (`/api/blog/posts`)
+- **SEO per post**: meta title, meta description, og:image, JSON-LD Article schema, canonical URL
+- **Components** in `features/blog/`: PostCard, PostContent, TagFilter, PostMeta
+- **No admin UI here** — blog editing happens in the admin app (`/admin/`)
+
 ## Testing
 
 - **Components**: `@testing-library/react` — test render + interactions
 - **Server Actions**: unit tests mocking the API client
 - **Hooks**: `renderHook` from Testing Library
-- **E2E**: Playwright for critical flows
+- **E2E**: Playwright for critical user flows
+
+### Playwright E2E tests
+- Config: `frontend/playwright.config.ts`
+- Tests: `frontend/e2e/` directory
+- Core flows to test:
+  - Register → login → see dashboard
+  - Update profile in settings
+  - Upload a file
+  - Send AI chat message
+  - View blog post
+- Run: `npx playwright test`
+- CI: tests run in GitHub Actions on every PR
 
 Test file next to source: `login-form.tsx` → `login-form.test.tsx`
 
 ## Commands
 
 ```bash
-npm run dev       # Start dev server
-npm run build     # Production build
-npm run lint      # ESLint
-npm run test      # Run tests
+npm run dev           # Start dev server
+npm run build         # Production build
+npm run lint          # ESLint
+npm run test          # Run unit tests
+npx playwright test   # Run E2E tests
 ```

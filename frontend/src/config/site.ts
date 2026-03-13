@@ -10,7 +10,7 @@ export const siteConfig = {
       { label: "Docs", href: "/docs" },
     ],
     dashboard: [
-      { label: "Dashboard", href: "/", icon: "home" },
+      { label: "Dashboard", href: "/dashboard", icon: "home" },
       { label: "AI Chat", href: "/ai", icon: "bot" },
       { label: "Files", href: "/files", icon: "folder" },
       { label: "Notifications", href: "/notifications", icon: "bell" },

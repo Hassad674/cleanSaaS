@@ -56,8 +56,10 @@ cleanSaaS/
 ├── frontend/          → Next.js 15, Tailwind, feature-based (see frontend/CLAUDE.md)
 ├── backend/           → Go + Chi, hexagonal architecture (see backend/CLAUDE.md)
 │   └── migrations/    → SQL migration files (up/down)
-├── .claude/skills/    → Custom Claude Code skills (/add-feature, /check, /add-migration, /test)
+├── admin/             → Vite + React + Tailwind, admin dashboard (see admin/CLAUDE.md)
+├── .claude/skills/    → Custom Claude Code skills
 ├── docker-compose.yml → PostgreSQL + DbGate (local DB viewer)
+├── BLOCKED.md         → Documented blockers (features skipped due to persistent issues)
 └── CLAUDE.md          → This file
 ```
 
@@ -145,7 +147,51 @@ cd backend && make run
 cd frontend && npm run dev
 ```
 
+## Skills reference
+
+Use these slash commands to accelerate development:
+
+| Situation | Skill | Example |
+|-----------|-------|---------|
+| New full-stack module | `/add-feature` | `/add-feature billing with plans and subscriptions` |
+| New endpoint on existing feature | `/add-endpoint` | `/add-endpoint reset-password on auth` |
+| New/swap external provider | `/add-adapter` | `/add-adapter lemonsqueezy for payment` |
+| New database table or column | `/add-migration` | `/add-migration create subscriptions table` |
+| Remove a module cleanly | `/remove-feature` | `/remove-feature billing` |
+| Verify architecture rules | `/check` | `/check` or `/check billing` |
+| Code review before commit | `/review` | `/review` or `/review auth` |
+| Run tests intelligently | `/test` | `/test auth` or `/test changed` |
+
+Skills are auto-detected: describing what you want is enough. You don't have to type the slash command explicitly.
+
+## Autonomous work process
+
+### Commit strategy
+- 1 commit per completed feature
+- Before EVERY commit: `go build ./...` + `npx tsc --noEmit` + `go test ./...`
+- Never commit broken code on main
+- Conventional messages: `feat:`, `fix:`, `test:`, `refactor:`, `chore:`, `docs:`
+
+### Validation checklist (per feature)
+1. Backend compiles: `cd backend && go build ./...`
+2. Frontend compiles: `cd frontend && npx tsc --noEmit`
+3. Tests pass: `cd backend && go test ./... -count=1`
+4. E2E tests pass (if Playwright set up): `cd frontend && npx playwright test`
+5. Architecture check: run `/check` mentally or explicitly
+6. No hardcoded colors in frontend (use design tokens)
+7. No cross-feature imports
+8. Migration has both up.sql and down.sql
+
+### Blocker policy
+If stuck on a bug/issue for more than 30 minutes:
+1. Document it in `BLOCKED.md` at the project root (feature name, what failed, what was tried)
+2. Commit working code so far (if any)
+3. Move to the next task
+4. Come back to blockers at the end if time permits
+
 ## Environment variables
 
 - **Backend**: `DATABASE_URL`, `PORT`, `JWT_SECRET`, service-specific keys. See `backend/internal/config/config.go`.
 - **Frontend**: `NEXT_PUBLIC_API_URL`
+- **Admin**: `VITE_API_URL`
+- Never commit `.env` files — they are gitignored
