@@ -48,6 +48,33 @@ func (h *UserHandler) UpdateProfile(w http.ResponseWriter, r *http.Request) {
 	response.JSON(w, http.StatusOK, response.UserFromDomain(u))
 }
 
+func (h *UserHandler) ChangePassword(w http.ResponseWriter, r *http.Request) {
+	userID := middleware.UserIDFromContext(r.Context())
+
+	var req request.ChangePasswordRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		response.Error(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	if req.OldPassword == "" || req.NewPassword == "" {
+		response.Error(w, http.StatusBadRequest, "old_password and new_password are required")
+		return
+	}
+
+	if len(req.NewPassword) < 8 {
+		response.Error(w, http.StatusBadRequest, "new password must be at least 8 characters")
+		return
+	}
+
+	if err := h.svc.ChangePassword(r.Context(), userID, req.OldPassword, req.NewPassword); err != nil {
+		response.HandleDomainError(w, err)
+		return
+	}
+
+	response.JSON(w, http.StatusOK, map[string]string{"message": "password updated"})
+}
+
 func (h *UserHandler) DeleteAccount(w http.ResponseWriter, r *http.Request) {
 	userID := middleware.UserIDFromContext(r.Context())
 

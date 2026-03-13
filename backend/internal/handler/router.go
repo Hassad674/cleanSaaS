@@ -56,6 +56,7 @@ func NewRouter(
 		userHandler := NewUserHandler(userSvc)
 		r.Get("/users/me", userHandler.GetProfile)
 		r.Patch("/users/me", userHandler.UpdateProfile)
+		r.Put("/users/me/password", userHandler.ChangePassword)
 		r.Delete("/users/me", userHandler.DeleteAccount)
 	})
 
