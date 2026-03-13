@@ -16,6 +16,7 @@ import (
 	adaptstripe "github.com/hassad/boilerplateSaaS/backend/internal/adapter/stripe"
 	appai "github.com/hassad/boilerplateSaaS/backend/internal/app/ai"
 	appauth "github.com/hassad/boilerplateSaaS/backend/internal/app/auth"
+	appnotif "github.com/hassad/boilerplateSaaS/backend/internal/app/notification"
 	appbilling "github.com/hassad/boilerplateSaaS/backend/internal/app/billing"
 	appstorage "github.com/hassad/boilerplateSaaS/backend/internal/app/storage"
 	appuser "github.com/hassad/boilerplateSaaS/backend/internal/app/user"
@@ -84,12 +85,16 @@ func main() {
 		}
 	}
 
+	// Notifications
+	notificationRepo := postgres.NewNotificationRepository(db)
+	notifSvc := appnotif.NewService(notificationRepo)
+
 	// App services
 	authSvc := appauth.NewService(userRepo, passwordResetRepo, emailVerificationRepo, emailSvc, jwtMaker, cfg.FrontendURL)
 	userSvc := appuser.NewService(userRepo)
 
 	// Router
-	router := handler.NewRouter(authSvc, userSvc, billingSvc, storageSvc, aiSvc, cfg.JWTSecret, db, logger)
+	router := handler.NewRouter(authSvc, userSvc, billingSvc, storageSvc, aiSvc, notifSvc, cfg.JWTSecret, db, logger)
 
 	// HTTP server
 	srv := &http.Server{

@@ -13,6 +13,7 @@ import (
 	appai "github.com/hassad/boilerplateSaaS/backend/internal/app/ai"
 	"github.com/hassad/boilerplateSaaS/backend/internal/app/auth"
 	appbilling "github.com/hassad/boilerplateSaaS/backend/internal/app/billing"
+	appnotif "github.com/hassad/boilerplateSaaS/backend/internal/app/notification"
 	appstorage "github.com/hassad/boilerplateSaaS/backend/internal/app/storage"
 	"github.com/hassad/boilerplateSaaS/backend/internal/app/user"
 	"github.com/hassad/boilerplateSaaS/backend/internal/handler/middleware"
@@ -26,6 +27,7 @@ func NewRouter(
 	billingSvc *appbilling.Service,
 	storageSvc *appstorage.Service,
 	aiSvc *appai.Service,
+	notifSvc *appnotif.Service,
 	jwtSecret string,
 	db *sql.DB,
 	logger *slog.Logger,
@@ -96,6 +98,13 @@ func NewRouter(
 			r.Get("/files", storageHandler.List)
 			r.Delete("/files/{id}", storageHandler.Delete)
 		}
+
+		// Notifications (always available)
+		notifHandler := NewNotificationHandler(notifSvc)
+		r.Get("/notifications", notifHandler.List)
+		r.Get("/notifications/count", notifHandler.UnreadCount)
+		r.Put("/notifications/{id}/read", notifHandler.MarkRead)
+		r.Put("/notifications/read-all", notifHandler.MarkAllRead)
 
 		// AI Chat (authenticated)
 		if aiSvc != nil {

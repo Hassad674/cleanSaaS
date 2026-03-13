@@ -12,4 +12,5 @@ type NotificationRepository interface {
 	ListByUserID(ctx context.Context, userID string, unreadOnly bool, offset, limit int) ([]*notification.Notification, int, error)
 	MarkRead(ctx context.Context, id string) error
 	MarkAllRead(ctx context.Context, userID string) error
+	UnreadCount(ctx context.Context, userID string) (int, error)
 }

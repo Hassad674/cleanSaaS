@@ -1,8 +1,19 @@
 export type Notification = {
   id: string;
+  type: string;
   title: string;
-  body: string;
-  channel: "email" | "in_app";
+  message: string;
   read: boolean;
   created_at: string;
+};
+
+export type NotificationsResponse = {
+  notifications: Notification[];
+  total: number;
+  page: number;
+  limit: number;
+};
+
+export type UnreadCountResponse = {
+  count: number;
 };

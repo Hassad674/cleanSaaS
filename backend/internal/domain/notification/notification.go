@@ -2,20 +2,14 @@ package notification
 
 import "time"
 
-type Channel string
-
-const (
-	ChannelEmail  Channel = "email"
-	ChannelInApp  Channel = "in_app"
-)
-
 type Notification struct {
 	ID        string
 	UserID    string
+	Type      string
 	Title     string
-	Body      string
-	Channel   Channel
+	Message   string
 	Read      bool
+	Data      map[string]interface{}
 	CreatedAt time.Time
 }
 
