@@ -1,33 +1,63 @@
 const features = [
   {
     name: "Authentication",
-    description: "Email/password, OAuth (Google, GitHub), JWT sessions, password reset. Production-ready from day one.",
+    description: "Email/password login, JWT sessions, password reset, email verification. Production-ready auth from day one.",
     badge: "Core",
   },
   {
     name: "Billing & Subscriptions",
-    description: "Stripe integration with plans, invoices, customer portal, and webhook handling.",
+    description: "Stripe Checkout, 3 plans, webhooks, invoices, customer portal. Plug in your Stripe key and go.",
     badge: "Module",
   },
   {
     name: "AI Chat",
-    description: "Multi-provider support — Claude, OpenAI, Gemini. Conversation history, streaming responses.",
+    description: "Gemini-powered conversations with SSE streaming, conversation history, and auto-titling.",
     badge: "Module",
   },
   {
     name: "File Storage",
-    description: "Upload, manage, and serve files via Cloudflare R2. Signed URLs, quotas, MIME validation.",
+    description: "Upload and manage files via Cloudflare R2. Drag-and-drop UI, type validation, 50MB limit.",
+    badge: "Module",
+  },
+  {
+    name: "Email System",
+    description: "Transactional emails via Resend with HTML templates for verification, password reset, and more.",
     badge: "Module",
   },
   {
     name: "Notifications",
-    description: "Email + in-app notifications with templates. Powered by Resend. Read/unread tracking.",
+    description: "In-app notification bell with unread count, mark-as-read, and 30s polling. Always available.",
     badge: "Module",
   },
   {
-    name: "Admin Dashboard",
-    description: "User management, analytics overview, audit logs. Role-based access control.",
+    name: "Blog CMS",
+    description: "Database-backed blog with tags, slugs, SEO metadata, and draft/publish workflow. Admin-managed.",
     badge: "Module",
+  },
+  {
+    name: "Admin Panel",
+    description: "Separate Vite app for user management, blog editing, and dashboard stats. Role-based access.",
+    badge: "Module",
+  },
+  {
+    name: "Background Jobs",
+    description: "Go-native job scheduler with token cleanup and system stats logging. No external dependencies.",
+    badge: "Core",
+  },
+  {
+    name: "Security",
+    description: "Rate limiting, bcrypt passwords, parameterized SQL, CORS, input validation at every boundary.",
+    badge: "Core",
+  },
+  {
+    name: "Hexagonal Architecture",
+    description: "Clean separation of concerns. Swap any provider by changing one adapter. Test logic without infrastructure.",
+    badge: "Core",
+  },
+  {
+    name: "Developer Experience",
+    description: "CLAUDE.md at every level, skills system, 74+ tests, TypeScript strict mode, conventional commits.",
+    badge: "Core",
   },
 ] as const;
 
@@ -41,7 +71,7 @@ export function FeaturesSection() {
           </h2>
           <p className="text-muted-foreground text-lg max-w-2xl mx-auto">
             Every feature is an independent module. Use all of them or pick only
-            what your product needs.
+            what your product needs. Delete a folder, zero compilation errors.
           </p>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
