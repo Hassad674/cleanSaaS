@@ -402,30 +402,30 @@ Update the checkbox (`[ ]` → `[x]`) in this file after completing each task.
 ### TASK 3: Settings Page
 > Extends existing user feature
 
-- [ ] **3a. Backend — password change endpoint**
+- [x] **3a. Backend — password change endpoint**
   - Add method to `app/user/service.go`: `ChangePassword(ctx, userID, oldPassword, newPassword string) error`
   - Verify old password with bcrypt, hash new password, update in DB
   - Add handler in `handler/user.go`: `PUT /api/users/me/password`
   - Add DTO: `dto/request/user.go` — `ChangePasswordRequest{OldPassword, NewPassword string}`
 
-- [ ] **3b. Backend — delete account endpoint**
+- [x] **3b. Backend — delete account endpoint**
   - Add method to `app/user/service.go`: `DeleteAccount(ctx, userID string) error`
   - Add `Delete(ctx, id string) error` to `adapter/postgres/user.go` if not exists
   - Add handler: `DELETE /api/users/me`
 
-- [ ] **3c. Frontend — settings components**
+- [x] **3c. Frontend — settings components**
   - Create `frontend/src/features/user/components/settings-profile.tsx` — edit name form
   - Create `frontend/src/features/user/components/settings-password.tsx` — change password form
   - Create `frontend/src/features/user/components/settings-danger.tsx` — delete account button with confirmation
   - All forms use design tokens, show loading/success/error states
 
-- [ ] **3d. Frontend — settings page**
+- [x] **3d. Frontend — settings page**
   - Update `frontend/src/app/(dashboard)/settings/page.tsx` — compose the 3 settings components
   - Sections separated by cards with clear headings
 
-- [ ] **3e. Test**: Unit test for `ChangePassword` service method (correct old pw, wrong old pw, same password)
+- [x] **3e. Test**: Unit test for `ChangePassword` service method (correct old pw, wrong old pw, same password)
 
-- [ ] **3f. Commit**: `feat: implement settings page (profile, password, account deletion)`
+- [x] **3f. Commit**: `feat: implement settings page (profile, password, account deletion)`
 
 ---
 
