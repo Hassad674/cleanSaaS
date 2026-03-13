@@ -27,8 +27,9 @@
 | **Referral system** | No | Yes (built-in) | **CleanSaaS** |
 | **Mobile app** | No | React Native (shared backend) | **CleanSaaS** |
 | **i18n / Translation** | No | Yes (next-intl) | **CleanSaaS** |
-| **Real-time WebSocket** | No | Yes (Go native) | **CleanSaaS** |
+| **Real-time WebSocket** | No | Yes (gorilla/websocket, Hub pattern) | **CleanSaaS** |
 | **Rate limiting** | No | Yes (Go middleware) | **CleanSaaS** |
+| **Interactive demos** | No | Yes (8 public demo pages) | **CleanSaaS** |
 | **AI-agent optimized** | AGENTS.md + Cursor rules | CLAUDE.md + skills + memory system | **CleanSaaS** — deeper integration |
 | **Dark mode** | Via theme toggle | CSS auto + toggle | Tie |
 | **Performance** | Node.js + Prisma ORM | Go + raw SQL + connection pooling | **CleanSaaS** — orders of magnitude faster |
@@ -47,14 +48,14 @@ These are the features we are building today. Each one gets a commit when comple
 - **Backend**: Already has user update endpoint, add password change + delete
 - **Frontend**: `features/user/components/settings-*.tsx`, compose in `app/(dashboard)/settings/page.tsx`
 - **API keys needed**: None
-- **Status**: 🔲 To do
+- **Status**: ✅ Done
 
 ### 1.2 — Resend Email Adapter
 - **What**: Transactional email sending (verification, password reset, notifications)
 - **Backend**: `adapter/resend/` implements `port/service/EmailService`
 - **Templates**: Welcome, email verification, password reset, notification digest
 - **API keys needed**: `RESEND_API_KEY` ✅ Present
-- **Status**: 🔲 To do
+- **Status**: ✅ Done
 
 ### 1.3 — Forgot Password / Reset Password
 - **What**: Full flow — request reset via email → receive link with token → set new password
@@ -62,7 +63,7 @@ These are the features we are building today. Each one gets a commit when comple
 - **Frontend**: `features/auth/components/forgot-password-form.tsx`, `reset-password-form.tsx`
 - **Depends on**: 1.2 (Resend adapter)
 - **API keys needed**: `RESEND_API_KEY` ✅
-- **Status**: 🔲 To do
+- **Status**: ✅ Done
 
 ### 1.4 — Email Verification
 - **What**: After registration, send verification email. Unverified users have limited access.
@@ -70,35 +71,35 @@ These are the features we are building today. Each one gets a commit when comple
 - **Frontend**: Verification page, resend verification button
 - **Depends on**: 1.2 (Resend adapter)
 - **API keys needed**: `RESEND_API_KEY` ✅
-- **Status**: 🔲 To do
+- **Status**: ✅ Done
 
 ### 1.5 — Stripe Billing
 - **What**: Plans (free/pro/enterprise), checkout session, subscription management, webhook handling, invoices
 - **Backend**: Migration (plans, subscriptions, invoices tables) + `adapter/stripe/` + billing service + handlers + webhook endpoint
 - **Frontend**: Pricing page (public), billing settings (manage subscription, invoices), upgrade/downgrade
 - **API keys needed**: `STRIPE_SECRET_KEY` ✅, `STRIPE_WEBHOOK_SECRET` ✅
-- **Status**: 🔲 To do (domain entities + ports already scaffolded)
+- **Status**: ✅ Done (domain entities + ports already scaffolded)
 
 ### 1.6 — Cloudflare R2 File Storage
 - **What**: Upload files (images, videos, documents), list files, delete files, signed URLs
 - **Backend**: Migration (files table) + `adapter/r2/` using S3-compatible API + storage service + handlers
 - **Frontend**: Upload component (drag & drop), file list with preview, file management
 - **API keys needed**: `R2_ACCOUNT_ID` ✅, `R2_ACCESS_KEY` ✅, `R2_SECRET_KEY` ✅, `R2_BUCKET_NAME` ✅, `R2_PUBLIC_URL` ✅
-- **Status**: 🔲 To do (domain entity + port already scaffolded)
+- **Status**: ✅ Done (domain entity + port already scaffolded)
 
 ### 1.7 — Gemini AI Chat
 - **What**: Chat interface with AI, conversation history, streaming responses
 - **Backend**: Migration (conversations, messages tables) + `adapter/gemini/` + AI service + SSE streaming handler
 - **Frontend**: Chat UI with message bubbles, conversation sidebar, streaming text display
 - **API keys needed**: `GEMINI_API_KEY` ✅ Present
-- **Status**: 🔲 To do (domain entities + port already scaffolded)
+- **Status**: ✅ Done (domain entities + port already scaffolded)
 
 ### 1.8 — In-App Notifications
 - **What**: Notification bell with unread count, dropdown list, mark as read, notification types (system, billing, etc.)
 - **Backend**: Migration (notifications table) + postgres adapter + notification service + handlers
 - **Frontend**: Bell icon in header, notification dropdown, notification page
 - **API keys needed**: None (in-app only, email notifications via Resend)
-- **Status**: 🔲 To do (domain entities + port already scaffolded)
+- **Status**: ✅ Done (domain entities + port already scaffolded)
 
 ### 1.9 — Blog (DB-backed CMS via Admin Panel)
 - **What**: Full blog system managed from the admin panel — not static markdown
@@ -107,7 +108,7 @@ These are the features we are building today. Each one gets a commit when comple
 - **Frontend (admin)**: Blog editor — rich text, cover image upload (R2), SEO fields (meta title, meta description, slug), tags, status (draft/published/scheduled)
 - **SEO per post**: Auto-generated og:image, JSON-LD Article schema, canonical URL
 - **API keys needed**: None (uses R2 for images, already configured)
-- **Status**: 🔲 To do
+- **Status**: ✅ Done
 
 ### 1.10 — Admin Panel (Separate Vite App)
 - **What**: Standalone React app at `/admin/` — user management, analytics dashboard, blog CMS
@@ -115,21 +116,21 @@ These are the features we are building today. Each one gets a commit when comple
 - **Frontend (admin/)**: New Vite + React + Tailwind app with its own `CLAUDE.md`
 - **Sections**: Dashboard (stats + PostHog analytics), Users (list/search/suspend/ban), Blog (create/edit/publish posts), Settings
 - **API keys needed**: `POSTHOG_API_KEY` ✅, `POSTHOG_PROJECT_ID` ✅, `POSTHOG_HOST` ✅
-- **Status**: 🔲 To do
+- **Status**: ✅ Done
 
 ### 1.11 — SEO
 - **What**: Dynamic meta tags, `sitemap.xml`, `robots.txt`, Open Graph images, JSON-LD structured data
 - **Backend**: Sitemap generation endpoint (optional)
 - **Frontend**: Next.js metadata API in all pages, shared SEO component
 - **API keys needed**: None
-- **Status**: 🔲 To do
+- **Status**: ✅ Done
 
 ### 1.12 — Background Jobs & Cron
 - **What**: Go-native job runner using goroutines + tickers. No external dependency.
 - **Jobs**: Clean expired tokens (hourly), send notification digests (daily), sync Stripe subscription status (6h), cleanup orphan files (daily)
 - **Backend**: `pkg/jobs/` — scheduler + job registry, wired in `main.go`
 - **API keys needed**: None
-- **Status**: 🔲 To do
+- **Status**: ✅ Done
 
 ### 1.13 — Backend Middleware (Rate Limiting, Health, Logging, Graceful Shutdown)
 - **What**: Production-grade middleware stack
@@ -138,14 +139,14 @@ These are the features we are building today. Each one gets a commit when comple
 - **Structured logging**: `slog` with JSON output, request ID, duration, status
 - **Graceful shutdown**: Handle SIGTERM/SIGINT, drain connections, close DB pool
 - **API keys needed**: None
-- **Status**: 🔲 To do
+- **Status**: ✅ Done
 
 ### 1.14 — Unit Tests
 - **What**: Tests for all domain entities + all app services (mocked ports)
 - **Backend**: `domain/*/entity_test.go`, `app/*/service_test.go`
 - **Target**: 80%+ coverage on domain + app layers
 - **API keys needed**: None
-- **Status**: 🔲 To do
+- **Status**: ✅ Done
 
 ### 1.15 — Playwright E2E Tests (Setup + Core Flows)
 - **What**: Browser-based end-to-end tests that validate real user flows
@@ -153,7 +154,7 @@ These are the features we are building today. Each one gets a commit when comple
 - **Tests**: Register → login → dashboard, settings update, file upload, AI chat send, billing checkout flow
 - **Why in Phase 1**: Acts as a safety net during autonomous development — validates features work end-to-end
 - **API keys needed**: None
-- **Status**: 🔲 To do
+- **Status**: ✅ Done
 
 ### 1.16 — Landing Page Update
 - **What**: Update landing page to showcase all implemented features
@@ -168,7 +169,17 @@ These are the features we are building today. Each one gets a commit when comple
   8. **DX** — Developer experience (already done)
   9. **CTA** — "Get started in 5 minutes" (already done)
 - **API keys needed**: None
-- **Status**: 🔲 To do (done last, after all features are built)
+- **Status**: ✅ Done (done last, after all features are built)
+
+### 1.17 — Real-Time WebSocket
+- **What**: Go WebSocket server (gorilla/websocket), no external service
+- **Use cases**: Live notifications, real-time chat, presence indicators
+- **Backend**: `pkg/ws/` — hub + client + broadcast pattern
+- **Frontend**: WebSocket hook, auto-reconnect
+- **Status**: ✅ Done
+
+### Demo Pages
+The landing site includes **8 public interactive demo pages** showcasing each major feature (AI Chat, Storage, Billing, Notifications, Blog, Admin, Settings, WebSocket). These let visitors experience the boilerplate's capabilities without creating an account.
 
 ---
 
@@ -194,6 +205,7 @@ These features add significant value and should be done soon after Phase 1.
 - **Frontend**: Referral dashboard, share link, referral stats
 - **API keys needed**: None (homemade system)
 - **Priority**: High (growth/marketing lever)
+- **Status**: 🔄 In progress
 
 ### 2.4 — i18n / Internationalization
 - **What**: Multi-language support using `next-intl`
@@ -201,22 +213,16 @@ These features add significant value and should be done soon after Phase 1.
 - **Backend**: Error messages remain in English (codes), frontend translates
 - **Priority**: Medium
 
-### 2.5 — Real-Time WebSocket
-- **What**: Go-native WebSocket server (gorilla/websocket or nhooyr/websocket), no external service
-- **Use cases**: Live notifications, real-time chat, presence indicators
-- **Backend**: `pkg/ws/` — hub + client + broadcast pattern
-- **Frontend**: WebSocket hook, auto-reconnect
-- **Priority**: Medium
-
-### 2.6 — Documentation Site
+### 2.5 — Documentation Site
 - **What**: User-facing docs explaining how to use the boilerplate, install, configure, add features
 - **Tech**: Likely Nextra (Next.js based) or Astro Starlight
 - **Priority**: Medium
 
-### 2.7 — Dark Mode Toggle
+### 2.6 — Dark Mode Toggle
 - **What**: Manual toggle (light/dark/system) in addition to current auto `prefers-color-scheme`
 - **Frontend**: Theme provider, toggle button in header, persist preference in localStorage
 - **Priority**: Low
+- **Status**: 🔄 In progress
 
 ---
 

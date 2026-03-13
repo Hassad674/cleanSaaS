@@ -4,6 +4,10 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"path/filepath"
+	"strings"
+
+	"github.com/google/uuid"
 
 	"github.com/hassad/boilerplateSaaS/backend/internal/domain"
 	domainstorage "github.com/hassad/boilerplateSaaS/backend/internal/domain/storage"
@@ -27,8 +31,21 @@ func (s *Service) Upload(ctx context.Context, userID, fileName, contentType stri
 	if size > domainstorage.MaxFileSize {
 		return nil, fmt.Errorf("%w: file exceeds maximum size of 50MB", domain.ErrValidation)
 	}
+	if size <= 0 {
+		return nil, fmt.Errorf("%w: file is empty", domain.ErrValidation)
+	}
 
-	key := fmt.Sprintf("%s/%s", userID, fileName)
+	// Sanitize filename to prevent path traversal:
+	// 1. Extract only the base filename (strip any directory components)
+	// 2. Reject hidden files (starting with .)
+	// 3. Generate a unique key with UUID to prevent collisions and name-based attacks
+	baseName := filepath.Base(fileName)
+	if baseName == "." || baseName == ".." || strings.HasPrefix(baseName, ".") {
+		return nil, fmt.Errorf("%w: invalid file name", domain.ErrValidation)
+	}
+
+	ext := filepath.Ext(baseName)
+	key := fmt.Sprintf("%s/%s%s", userID, uuid.New().String(), ext)
 
 	url, err := s.storage.Upload(ctx, key, reader, contentType, size)
 	if err != nil {

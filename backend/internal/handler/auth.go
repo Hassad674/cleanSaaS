@@ -8,6 +8,7 @@ import (
 	"github.com/hassad/boilerplateSaaS/backend/internal/handler/dto/request"
 	"github.com/hassad/boilerplateSaaS/backend/internal/handler/dto/response"
 	"github.com/hassad/boilerplateSaaS/backend/internal/handler/middleware"
+	"github.com/hassad/boilerplateSaaS/backend/pkg/validate"
 )
 
 type AuthHandler struct {
@@ -27,6 +28,21 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 
 	if req.Email == "" || req.Password == "" || req.Name == "" {
 		response.Error(w, http.StatusBadRequest, "email, name and password are required")
+		return
+	}
+
+	if !validate.Email(req.Email) {
+		response.Error(w, http.StatusBadRequest, "invalid email format")
+		return
+	}
+
+	if len(req.Password) < 8 {
+		response.Error(w, http.StatusBadRequest, "password must be at least 8 characters")
+		return
+	}
+
+	if len(req.Name) > 200 {
+		response.Error(w, http.StatusBadRequest, "name is too long")
 		return
 	}
 

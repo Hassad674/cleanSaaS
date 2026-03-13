@@ -73,6 +73,9 @@ func (r *FileRepository) ListByUserID(ctx context.Context, userID string, offset
 		}
 		files = append(files, f)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, fmt.Errorf("iterating files: %w", err)
+	}
 
 	return files, total, nil
 }

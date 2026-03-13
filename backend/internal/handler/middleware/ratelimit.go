@@ -20,6 +20,7 @@ type RateLimiter struct {
 	buckets  map[string]*bucket
 	rate     float64 // tokens per second
 	capacity float64 // max tokens
+	stop     chan struct{}
 }
 
 // NewRateLimiter creates a new rate limiter.
@@ -29,9 +30,15 @@ func NewRateLimiter(requestsPerMinute float64) *RateLimiter {
 		buckets:  make(map[string]*bucket),
 		rate:     requestsPerMinute / 60.0,
 		capacity: requestsPerMinute,
+		stop:     make(chan struct{}),
 	}
 	go rl.cleanup()
 	return rl
+}
+
+// Stop signals the cleanup goroutine to exit.
+func (rl *RateLimiter) Stop() {
+	close(rl.stop)
 }
 
 // Allow checks if the IP is allowed to make a request.
@@ -64,20 +71,25 @@ func (rl *RateLimiter) Allow(ip string) bool {
 	return true
 }
 
-// cleanup removes stale entries every 5 minutes.
+// cleanup removes stale entries every 5 minutes. Stops when Stop() is called.
 func (rl *RateLimiter) cleanup() {
 	ticker := time.NewTicker(5 * time.Minute)
 	defer ticker.Stop()
 
-	for range ticker.C {
-		rl.mu.Lock()
-		cutoff := time.Now().Add(-10 * time.Minute)
-		for ip, b := range rl.buckets {
-			if b.lastCheck.Before(cutoff) {
-				delete(rl.buckets, ip)
+	for {
+		select {
+		case <-rl.stop:
+			return
+		case <-ticker.C:
+			rl.mu.Lock()
+			cutoff := time.Now().Add(-10 * time.Minute)
+			for ip, b := range rl.buckets {
+				if b.lastCheck.Before(cutoff) {
+					delete(rl.buckets, ip)
+				}
 			}
+			rl.mu.Unlock()
 		}
-		rl.mu.Unlock()
 	}
 }
 

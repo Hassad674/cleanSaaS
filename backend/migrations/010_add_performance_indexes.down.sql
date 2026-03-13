@@ -1,0 +1,10 @@
+DROP INDEX IF EXISTS idx_blog_posts_author_id;
+DROP INDEX IF EXISTS idx_blog_posts_tags;
+DROP INDEX IF EXISTS idx_conversations_user_updated;
+DROP INDEX IF EXISTS idx_notifications_user_created;
+DROP INDEX IF EXISTS idx_invoices_user_created;
+DROP INDEX IF EXISTS idx_files_user_created;
+DROP INDEX IF EXISTS idx_messages_conversation_created;
+DROP INDEX IF EXISTS idx_subscriptions_user_status;
+DROP INDEX IF EXISTS idx_password_resets_expires_at;
+DROP INDEX IF EXISTS idx_email_verifications_expires_at;

@@ -5,38 +5,86 @@ type PostContentProps = {
   post: BlogPost;
 };
 
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+/**
+ * Sanitizes a URL to prevent javascript: and data: protocol XSS attacks.
+ * Only allows http:, https:, mailto:, and relative URLs.
+ */
+function sanitizeUrl(url: string): string {
+  const trimmed = url.trim();
+  // Allow relative URLs
+  if (trimmed.startsWith("/") || trimmed.startsWith("#")) {
+    return trimmed;
+  }
+  // Allow http(s) and mailto only
+  if (
+    trimmed.startsWith("http://") ||
+    trimmed.startsWith("https://") ||
+    trimmed.startsWith("mailto:")
+  ) {
+    return trimmed;
+  }
+  // Block everything else (javascript:, data:, vbscript:, etc.)
+  return "#";
+}
+
 /**
  * Converts basic markdown syntax to HTML.
- * Handles: headings, bold, italic, links, code blocks, inline code,
- * unordered lists, ordered lists, blockquotes, images, horizontal rules,
- * and paragraphs.
+ *
+ * Security: All content is HTML-escaped FIRST, then markdown syntax is
+ * converted. This prevents stored XSS from blog content in the database.
  */
 function markdownToHtml(markdown: string): string {
-  let html = markdown;
-
-  // Fenced code blocks (```...```)
-  html = html.replace(
+  // Step 1: Extract and preserve fenced code blocks before escaping.
+  // We replace them with placeholders, escape everything else, then restore.
+  const codeBlocks: string[] = [];
+  let processed = markdown.replace(
     /```(\w*)\n([\s\S]*?)```/g,
-    (_match, _lang, code) =>
-      `<pre class="bg-muted rounded-lg p-4 overflow-x-auto my-4"><code>${escapeHtml(code.trim())}</code></pre>`
+    (_match, _lang, code) => {
+      const idx = codeBlocks.length;
+      codeBlocks.push(
+        `<pre class="bg-muted rounded-lg p-4 overflow-x-auto my-4"><code>${escapeHtml(code.trim())}</code></pre>`
+      );
+      return `%%CODEBLOCK_${idx}%%`;
+    }
   );
 
-  // Inline code
-  html = html.replace(
-    /`([^`]+)`/g,
-    '<code class="bg-muted rounded px-1.5 py-0.5 text-sm font-mono">$1</code>'
-  );
+  // Step 2: Extract inline code before escaping
+  const inlineCodes: string[] = [];
+  processed = processed.replace(/`([^`]+)`/g, (_match, code) => {
+    const idx = inlineCodes.length;
+    inlineCodes.push(
+      `<code class="bg-muted rounded px-1.5 py-0.5 text-sm font-mono">${escapeHtml(code)}</code>`
+    );
+    return `%%INLINECODE_${idx}%%`;
+  });
 
-  // Images
+  // Step 3: Escape ALL remaining HTML to prevent XSS
+  let html = escapeHtml(processed);
+
+  // Step 4: Now apply markdown transformations on the escaped content.
+  // Since content is escaped, user-injected HTML/JS is neutralized.
+
+  // Images — sanitize URLs
   html = html.replace(
     /!\[([^\]]*)\]\(([^)]+)\)/g,
-    '<img src="$2" alt="$1" class="rounded-lg my-4 max-w-full" loading="lazy" />'
+    (_match, alt, src) =>
+      `<img src="${sanitizeUrl(src)}" alt="${alt}" class="rounded-lg my-4 max-w-full" loading="lazy" />`
   );
 
-  // Links
+  // Links — sanitize URLs
   html = html.replace(
     /\[([^\]]+)\]\(([^)]+)\)/g,
-    '<a href="$2" class="text-primary hover:underline" target="_blank" rel="noopener noreferrer">$1</a>'
+    (_match, text, href) =>
+      `<a href="${sanitizeUrl(href)}" class="text-primary hover:underline" target="_blank" rel="noopener noreferrer">${text}</a>`
   );
 
   // Headings
@@ -65,7 +113,7 @@ function markdownToHtml(markdown: string): string {
 
   // Blockquotes
   html = html.replace(
-    /^> (.+)$/gm,
+    /^&gt; (.+)$/gm,
     '<blockquote class="border-l-4 border-primary pl-4 my-4 text-muted-foreground italic">$1</blockquote>'
   );
 
@@ -103,23 +151,24 @@ function markdownToHtml(markdown: string): string {
     const trimmed = line.trim();
     if (trimmed === "") {
       result.push("");
-    } else if (trimmed.startsWith("<")) {
+    } else if (trimmed.startsWith("<") || trimmed.startsWith("%%")) {
       result.push(line);
     } else {
       result.push(`<p class="text-foreground leading-relaxed my-3">${trimmed}</p>`);
     }
   }
 
-  return result.join("\n");
-}
+  html = result.join("\n");
 
-function escapeHtml(text: string): string {
-  return text
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#039;");
+  // Step 5: Restore code blocks and inline code
+  for (let i = 0; i < codeBlocks.length; i++) {
+    html = html.replace(`%%CODEBLOCK_${i}%%`, codeBlocks[i]);
+  }
+  for (let i = 0; i < inlineCodes.length; i++) {
+    html = html.replace(`%%INLINECODE_${i}%%`, inlineCodes[i]);
+  }
+
+  return html;
 }
 
 export function PostContent({ post }: PostContentProps) {

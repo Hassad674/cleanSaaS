@@ -15,9 +15,13 @@ import (
 	appbilling "github.com/hassad/boilerplateSaaS/backend/internal/app/billing"
 	appblog "github.com/hassad/boilerplateSaaS/backend/internal/app/blog"
 	appnotif "github.com/hassad/boilerplateSaaS/backend/internal/app/notification"
+	appreferral "github.com/hassad/boilerplateSaaS/backend/internal/app/referral"
 	appstorage "github.com/hassad/boilerplateSaaS/backend/internal/app/storage"
+	appteam "github.com/hassad/boilerplateSaaS/backend/internal/app/team"
 	"github.com/hassad/boilerplateSaaS/backend/internal/app/user"
 	"github.com/hassad/boilerplateSaaS/backend/internal/handler/middleware"
+	"github.com/hassad/boilerplateSaaS/backend/pkg/jwt"
+	"github.com/hassad/boilerplateSaaS/backend/pkg/ws"
 )
 
 var startTime = time.Now()
@@ -30,7 +34,11 @@ func NewRouter(
 	aiSvc *appai.Service,
 	notifSvc *appnotif.Service,
 	blogSvc *appblog.Service,
+	referralSvc *appreferral.Service,
+	teamSvc *appteam.Service,
+	wsHub *ws.Hub,
 	jwtSecret string,
+	frontendURL string,
 	db *sql.DB,
 	logger *slog.Logger,
 ) http.Handler {
@@ -44,11 +52,19 @@ func NewRouter(
 	r.Use(middleware.StructuredLogging(logger))
 	r.Use(chimw.Recoverer)
 	r.Use(chimw.RealIP)
-	r.Use(middleware.CORS())
+	r.Use(middleware.SecurityHeaders)
+	r.Use(middleware.CORS(frontendURL))
+	r.Use(middleware.MaxBodySize(1<<20)) // 1MB default for JSON endpoints
 	r.Use(middleware.RateLimit(apiLimiter))
 
 	// Health check
 	r.Get("/health", healthHandler(db))
+
+	// WebSocket endpoint (optional — only if hub is provided)
+	if wsHub != nil {
+		wsHandler := NewWSHandler(wsHub, jwt.NewMaker(jwtSecret), frontendURL)
+		r.Get("/ws", wsHandler.Upgrade)
+	}
 
 	// Public routes
 	r.Route("/auth", func(r chi.Router) {
@@ -123,6 +139,34 @@ func NewRouter(
 			r.Post("/ai/conversations/{id}/messages", aiHandler.SendMessage)
 			r.Post("/ai/conversations/{id}/stream", aiHandler.StreamMessage)
 			r.Delete("/ai/conversations/{id}", aiHandler.DeleteConversation)
+		}
+
+		// Referral (optional — only if referral service is provided)
+		if referralSvc != nil {
+			referralHandler := NewReferralHandler(referralSvc)
+			r.Get("/referral/code", referralHandler.GetCode)
+			r.Get("/referral/stats", referralHandler.GetStats)
+			r.Get("/referral/list", referralHandler.List)
+			r.Post("/referral/apply", referralHandler.Apply)
+		}
+
+		// Teams (optional — only if team service is provided)
+		if teamSvc != nil {
+			teamHandler := NewTeamHandler(teamSvc)
+			r.Post("/teams", teamHandler.Create)
+			r.Get("/teams", teamHandler.List)
+			r.Post("/teams/invite/accept", teamHandler.AcceptInvite)
+			r.Post("/teams/invite/decline", teamHandler.DeclineInvite)
+			r.Route("/teams/{id}", func(r chi.Router) {
+				r.Get("/", teamHandler.Get)
+				r.Put("/", teamHandler.Update)
+				r.Delete("/", teamHandler.Delete)
+				r.Post("/invite", teamHandler.InviteMember)
+				r.Get("/members", teamHandler.ListMembers)
+				r.Put("/members/{userId}/role", teamHandler.UpdateMemberRole)
+				r.Delete("/members/{userId}", teamHandler.RemoveMember)
+				r.Post("/leave", teamHandler.Leave)
+			})
 		}
 
 		// Admin routes (require admin role)

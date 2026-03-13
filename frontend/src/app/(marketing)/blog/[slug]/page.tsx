@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { fetchPostBySlug } from "@/features/blog/actions/blog";
 import { PostContent } from "@/features/blog/components/post-content";
-import { articleJsonLd } from "@/shared/lib/json-ld";
+import { articleJsonLd } from "@/features/blog/lib/json-ld";
 
 type PostPageProps = {
   params: Promise<{ slug: string }>;

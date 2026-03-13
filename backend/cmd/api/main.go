@@ -20,13 +20,16 @@ import (
 	appbilling "github.com/hassad/boilerplateSaaS/backend/internal/app/billing"
 	appblog "github.com/hassad/boilerplateSaaS/backend/internal/app/blog"
 	appnotif "github.com/hassad/boilerplateSaaS/backend/internal/app/notification"
+	appreferral "github.com/hassad/boilerplateSaaS/backend/internal/app/referral"
 	appstorage "github.com/hassad/boilerplateSaaS/backend/internal/app/storage"
+	appteam "github.com/hassad/boilerplateSaaS/backend/internal/app/team"
 	appuser "github.com/hassad/boilerplateSaaS/backend/internal/app/user"
 	"github.com/hassad/boilerplateSaaS/backend/internal/config"
 	"github.com/hassad/boilerplateSaaS/backend/internal/handler"
 	"github.com/hassad/boilerplateSaaS/backend/internal/port/service"
 	"github.com/hassad/boilerplateSaaS/backend/pkg/jobs"
 	"github.com/hassad/boilerplateSaaS/backend/pkg/jwt"
+	"github.com/hassad/boilerplateSaaS/backend/pkg/ws"
 )
 
 func main() {
@@ -92,16 +95,32 @@ func main() {
 	notificationRepo := postgres.NewNotificationRepository(db)
 	notifSvc := appnotif.NewService(notificationRepo)
 
+	// WebSocket hub (real-time communication)
+	wsHub := ws.NewHub()
+	go wsHub.Run()
+
+	// Wire WebSocket broadcaster into notification service
+	notifSvc.SetBroadcaster(wsHub)
+
 	// Blog
 	blogRepo := postgres.NewBlogRepository(db)
 	blogSvc := appblog.NewService(blogRepo)
+
+	// Referral
+	referralRepo := postgres.NewReferralRepository(db)
+	referralSvc := appreferral.NewService(referralRepo)
+
+	// Teams (optional)
+	teamRepo := postgres.NewTeamRepository(db)
+	memberRepo := postgres.NewTeamMemberRepository(db)
+	teamSvc := appteam.NewService(teamRepo, memberRepo)
 
 	// App services
 	authSvc := appauth.NewService(userRepo, passwordResetRepo, emailVerificationRepo, emailSvc, jwtMaker, cfg.FrontendURL)
 	userSvc := appuser.NewService(userRepo)
 
 	// Router
-	router := handler.NewRouter(authSvc, userSvc, billingSvc, storageSvc, aiSvc, notifSvc, blogSvc, cfg.JWTSecret, db, logger)
+	router := handler.NewRouter(authSvc, userSvc, billingSvc, storageSvc, aiSvc, notifSvc, blogSvc, referralSvc, teamSvc, wsHub, cfg.JWTSecret, cfg.FrontendURL, db, logger)
 
 	// HTTP server
 	srv := &http.Server{
@@ -161,6 +180,7 @@ func main() {
 	logger.Info("shutdown signal received", slog.String("signal", sig.String()))
 
 	scheduler.Stop()
+	wsHub.Stop()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()

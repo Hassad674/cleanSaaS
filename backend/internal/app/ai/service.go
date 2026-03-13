@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/hassad/boilerplateSaaS/backend/internal/domain"
 	domainai "github.com/hassad/boilerplateSaaS/backend/internal/domain/ai"
@@ -101,7 +102,7 @@ func (s *Service) StreamMessage(ctx context.Context, userID, conversationID, con
 	}
 
 	// Save full assistant response
-	assistantMsg := domainai.Message{Role: domainai.RoleAssistant, Content: collector.content}
+	assistantMsg := domainai.Message{Role: domainai.RoleAssistant, Content: collector.Content()}
 	if err := s.conversations.AddMessage(ctx, conversationID, assistantMsg); err != nil {
 		return fmt.Errorf("saving assistant message: %w", err)
 	}
@@ -145,13 +146,19 @@ func (s *Service) DeleteConversation(ctx context.Context, userID, conversationID
 	return s.conversations.Delete(ctx, conversationID)
 }
 
-// responseCollector captures streamed content while forwarding to the writer
+// responseCollector captures streamed content while forwarding to the writer.
+// Uses strings.Builder to avoid O(n^2) string concatenation on each chunk.
 type responseCollector struct {
-	writer  io.Writer
-	content string
+	writer io.Writer
+	buf    strings.Builder
 }
 
 func (c *responseCollector) Write(p []byte) (n int, err error) {
-	c.content += string(p)
+	c.buf.Write(p)
 	return c.writer.Write(p)
+}
+
+// Content returns the accumulated streamed content.
+func (c *responseCollector) Content() string {
+	return c.buf.String()
 }

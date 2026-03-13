@@ -1,5 +1,4 @@
 import Link from "next/link";
-import { cn } from "@/shared/lib/utils";
 import { PostCard } from "@/features/blog/components/post-card";
 import { TagFilter } from "@/features/blog/components/tag-filter";
 import type { BlogPost } from "@/features/blog/types";

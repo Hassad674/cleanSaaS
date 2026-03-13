@@ -84,8 +84,11 @@ func (h *AdminHandler) DashboardStats(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	posts, postCount, err := h.blogSvc.ListAll(r.Context(), "", "", 0, 0)
-	_ = posts
+	postCount, err := h.blogSvc.CountPosts(r.Context())
+	if err != nil {
+		response.HandleDomainError(w, err)
+		return
+	}
 
 	response.JSON(w, http.StatusOK, map[string]interface{}{
 		"total_users": userCount,

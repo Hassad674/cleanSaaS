@@ -107,3 +107,7 @@ func (s *Service) ListAll(ctx context.Context, status, tag string, offset, limit
 func (s *Service) ListTags(ctx context.Context) (map[string]int, error) {
 	return s.posts.ListTags(ctx)
 }
+
+func (s *Service) CountPosts(ctx context.Context) (int, error) {
+	return s.posts.Count(ctx)
+}

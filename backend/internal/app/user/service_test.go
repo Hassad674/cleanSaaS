@@ -28,6 +28,9 @@ func (m *mockUserRepo) FindByEmail(_ context.Context, _ string) (*domainuser.Use
 func (m *mockUserRepo) FindByProvider(_ context.Context, _, _ string) (*domainuser.User, error) {
 	return nil, domain.ErrNotFound
 }
+func (m *mockUserRepo) FindByStripeID(_ context.Context, _ string) (*domainuser.User, error) {
+	return nil, domain.ErrNotFound
+}
 func (m *mockUserRepo) Update(ctx context.Context, u *domainuser.User) error {
 	return m.updateFn(ctx, u)
 }

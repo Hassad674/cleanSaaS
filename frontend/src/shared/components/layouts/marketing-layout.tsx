@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { siteConfig } from "@/config/site";
+import { ThemeToggle } from "@/shared/components/theme-toggle";
 
 export function MarketingLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -21,6 +22,7 @@ export function MarketingLayout({ children }: { children: React.ReactNode }) {
             ))}
           </nav>
           <div className="flex items-center gap-3">
+            <ThemeToggle />
             <Link
               href="/login"
               className="text-sm text-muted-foreground hover:text-foreground transition-colors"

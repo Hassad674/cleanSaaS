@@ -195,25 +195,14 @@ func (s *Service) createSubscriptionFromWebhook(ctx context.Context, event *serv
 		return nil
 	}
 
-	users, _, err := s.users.List(ctx, 0, 10000)
+	// Look up user by Stripe customer ID (indexed query, not full table scan)
+	u, err := s.users.FindByStripeID(ctx, event.CustomerID)
 	if err != nil {
 		return nil
 	}
 
-	var userID string
-	for _, u := range users {
-		if u.StripeID == event.CustomerID {
-			userID = u.ID
-			break
-		}
-	}
-
-	if userID == "" {
-		return nil
-	}
-
 	sub := &domainbilling.Subscription{
-		UserID:             userID,
+		UserID:             u.ID,
 		PlanID:             plan.ID,
 		StripeSubscription: event.SubscriptionID,
 		Status:             domainbilling.StatusActive,

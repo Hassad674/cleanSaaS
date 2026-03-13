@@ -62,6 +62,18 @@ func (r *UserRepository) FindByProvider(ctx context.Context, provider, providerI
 	return u, err
 }
 
+func (r *UserRepository) FindByStripeID(ctx context.Context, stripeID string) (*user.User, error) {
+	u := &user.User{}
+	err := r.db.QueryRowContext(ctx,
+		`SELECT id, email, name, password_hash, avatar_url, role, email_verified, stripe_id, provider, provider_id, created_at, updated_at
+		 FROM users WHERE stripe_id = $1`, stripeID,
+	).Scan(&u.ID, &u.Email, &u.Name, &u.PasswordHash, &u.AvatarURL, &u.Role, &u.EmailVerified, &u.StripeID, &u.Provider, &u.ProviderID, &u.CreatedAt, &u.UpdatedAt)
+	if err == sql.ErrNoRows {
+		return nil, domain.ErrNotFound
+	}
+	return u, err
+}
+
 func (r *UserRepository) Update(ctx context.Context, u *user.User) error {
 	_, err := r.db.ExecContext(ctx,
 		`UPDATE users SET email=$1, name=$2, password_hash=$3, avatar_url=$4, role=$5, email_verified=$6, stripe_id=$7, updated_at=$8
@@ -100,6 +112,9 @@ func (r *UserRepository) List(ctx context.Context, offset, limit int) ([]*user.U
 		}
 		users = append(users, u)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, err
+	}
 	return users, total, nil
 }
 
@@ -131,6 +146,9 @@ func (r *UserRepository) Search(ctx context.Context, query string, offset, limit
 			return nil, 0, err
 		}
 		users = append(users, u)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, err
 	}
 	return users, total, nil
 }

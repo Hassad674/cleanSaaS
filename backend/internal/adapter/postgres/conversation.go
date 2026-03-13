@@ -58,6 +58,9 @@ func (r *ConversationRepository) FindByID(ctx context.Context, id string) (*ai.C
 		m.Role = ai.Role(role)
 		c.Messages = append(c.Messages, m)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterating messages: %w", err)
+	}
 
 	return c, nil
 }
@@ -113,6 +116,9 @@ func (r *ConversationRepository) ListByUserID(ctx context.Context, userID string
 		}
 		convos = append(convos, c)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, fmt.Errorf("iterating conversations: %w", err)
+	}
 
 	return convos, total, nil
 }
@@ -126,8 +132,10 @@ func (r *ConversationRepository) AddMessage(ctx context.Context, conversationID 
 		return fmt.Errorf("adding message: %w", err)
 	}
 	// Update conversation timestamp
-	_, _ = r.db.ExecContext(ctx,
+	if _, err := r.db.ExecContext(ctx,
 		`UPDATE conversations SET updated_at = NOW() WHERE id = $1`, conversationID,
-	)
+	); err != nil {
+		return fmt.Errorf("updating conversation timestamp: %w", err)
+	}
 	return nil
 }

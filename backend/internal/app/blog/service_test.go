@@ -21,6 +21,7 @@ type mockBlogRepo struct {
 	deleteFn     func(ctx context.Context, id string) error
 	listFn       func(ctx context.Context, status, tag string, offset, limit int) ([]*domainblog.Post, int, error)
 	listTagsFn   func(ctx context.Context) (map[string]int, error)
+	countFn      func(ctx context.Context) (int, error)
 }
 
 func (m *mockBlogRepo) Create(ctx context.Context, p *domainblog.Post) error {
@@ -73,6 +74,13 @@ func (m *mockBlogRepo) ListTags(ctx context.Context) (map[string]int, error) {
 		return m.listTagsFn(ctx)
 	}
 	return map[string]int{}, nil
+}
+
+func (m *mockBlogRepo) Count(ctx context.Context) (int, error) {
+	if m.countFn != nil {
+		return m.countFn(ctx)
+	}
+	return 0, nil
 }
 
 // Tests

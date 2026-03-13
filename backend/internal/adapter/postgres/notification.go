@@ -85,6 +85,9 @@ func (r *NotificationRepository) ListByUserID(ctx context.Context, userID string
 		_ = json.Unmarshal(dataJSON, &n.Data)
 		notifications = append(notifications, n)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, fmt.Errorf("iterating notifications: %w", err)
+	}
 
 	return notifications, total, nil
 }

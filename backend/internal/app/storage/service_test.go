@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"io"
+	"strings"
 	"testing"
 	"time"
 
@@ -93,7 +94,8 @@ func TestStorageService_Upload_Success(t *testing.T) {
 	file, err := svc.Upload(context.Background(), "user-1", "photo.jpg", "image/jpeg", 1024, reader)
 
 	assert.NoError(t, err)
-	assert.Equal(t, "user-1/photo.jpg", uploadedKey)
+	assert.True(t, strings.HasPrefix(uploadedKey, "user-1/"), "key should start with user-1/")
+	assert.True(t, strings.HasSuffix(uploadedKey, ".jpg"), "key should end with .jpg")
 	assert.Equal(t, "user-1", file.UserID)
 	assert.Equal(t, "photo.jpg", file.Name)
 	assert.Equal(t, int64(1024), file.SizeBytes)

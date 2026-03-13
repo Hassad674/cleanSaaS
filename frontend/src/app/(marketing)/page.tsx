@@ -6,7 +6,6 @@ import { SpotlightArchitecture } from "@/features/marketing/components/spotlight
 import { StackSection } from "@/features/marketing/components/stack-section";
 import { ComparisonSection } from "@/features/marketing/components/comparison-section";
 import { FeaturesSection } from "@/features/marketing/components/features-section";
-import { ArchitectureSection } from "@/features/marketing/components/architecture-section";
 import { DXSection } from "@/features/marketing/components/dx-section";
 import { CTASection } from "@/features/marketing/components/cta-section";
 import { organizationJsonLd } from "@/shared/lib/json-ld";

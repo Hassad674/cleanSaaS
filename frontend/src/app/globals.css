@@ -1,5 +1,7 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:where(.dark *));
+
 /*
  * CleanSaaS Design Tokens
  * Rose/pink primary (Airbnb-inspired), warm neutrals, clean & soft.
@@ -64,49 +66,47 @@
   --sidebar-ring: oklch(0.645 0.246 16.439);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --primary: oklch(0.645 0.246 16.439);
-    --primary-foreground: oklch(0.969 0.015 12.422);
+.dark {
+  --primary: oklch(0.645 0.246 16.439);
+  --primary-foreground: oklch(0.969 0.015 12.422);
 
-    --secondary: oklch(0.269 0.006 285.885);
-    --secondary-foreground: oklch(0.985 0.002 247.839);
+  --secondary: oklch(0.269 0.006 285.885);
+  --secondary-foreground: oklch(0.985 0.002 247.839);
 
-    --background: oklch(0.105 0.005 285.823);
-    --foreground: oklch(0.985 0.002 247.839);
+  --background: oklch(0.105 0.005 285.823);
+  --foreground: oklch(0.985 0.002 247.839);
 
-    --card: oklch(0.145 0.005 285.823);
-    --card-foreground: oklch(0.985 0.002 247.839);
+  --card: oklch(0.145 0.005 285.823);
+  --card-foreground: oklch(0.985 0.002 247.839);
 
-    --popover: oklch(0.145 0.005 285.823);
-    --popover-foreground: oklch(0.985 0.002 247.839);
+  --popover: oklch(0.145 0.005 285.823);
+  --popover-foreground: oklch(0.985 0.002 247.839);
 
-    --muted: oklch(0.269 0.006 285.885);
-    --muted-foreground: oklch(0.665 0.007 285.885);
+  --muted: oklch(0.269 0.006 285.885);
+  --muted-foreground: oklch(0.665 0.007 285.885);
 
-    --accent: oklch(0.2 0.04 16.439);
-    --accent-foreground: oklch(0.969 0.015 12.422);
+  --accent: oklch(0.2 0.04 16.439);
+  --accent-foreground: oklch(0.969 0.015 12.422);
 
-    --destructive: oklch(0.577 0.245 27.325);
-    --destructive-foreground: oklch(0.969 0.015 12.422);
+  --destructive: oklch(0.577 0.245 27.325);
+  --destructive-foreground: oklch(0.969 0.015 12.422);
 
-    --success: oklch(0.627 0.194 149.214);
-    --success-foreground: oklch(0.982 0.018 155.826);
+  --success: oklch(0.627 0.194 149.214);
+  --success-foreground: oklch(0.982 0.018 155.826);
 
-    --warning: oklch(0.769 0.188 70.08);
-    --warning-foreground: oklch(0.294 0.074 45.635);
+  --warning: oklch(0.769 0.188 70.08);
+  --warning-foreground: oklch(0.294 0.074 45.635);
 
-    --border: oklch(0.269 0.006 285.885);
-    --input: oklch(0.269 0.006 285.885);
-    --ring: oklch(0.645 0.246 16.439);
+  --border: oklch(0.269 0.006 285.885);
+  --input: oklch(0.269 0.006 285.885);
+  --ring: oklch(0.645 0.246 16.439);
 
-    --sidebar: oklch(0.145 0.005 285.823);
-    --sidebar-foreground: oklch(0.985 0.002 247.839);
-    --sidebar-border: oklch(0.269 0.006 285.885);
-    --sidebar-accent: oklch(0.2 0.04 16.439);
-    --sidebar-accent-foreground: oklch(0.969 0.015 12.422);
-    --sidebar-ring: oklch(0.645 0.246 16.439);
-  }
+  --sidebar: oklch(0.145 0.005 285.823);
+  --sidebar-foreground: oklch(0.985 0.002 247.839);
+  --sidebar-border: oklch(0.269 0.006 285.885);
+  --sidebar-accent: oklch(0.2 0.04 16.439);
+  --sidebar-accent-foreground: oklch(0.969 0.015 12.422);
+  --sidebar-ring: oklch(0.645 0.246 16.439);
 }
 
 @theme inline {
@@ -147,6 +147,14 @@
   --font-mono: var(--font-geist-mono);
 }
 
+/* Smooth theme transition */
+html.theme-transition,
+html.theme-transition *,
+html.theme-transition *::before,
+html.theme-transition *::after {
+  transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease !important;
+}
+
 /* Base styles */
 body {
   background: var(--background);
@@ -158,4 +166,28 @@ body {
 *:focus-visible {
   outline: 2px solid var(--ring);
   outline-offset: 2px;
+}
+
+/* Slide-in animation for new notifications */
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Fade + slide up animation for chat messages */
+@keyframes fadeSlideUp {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }

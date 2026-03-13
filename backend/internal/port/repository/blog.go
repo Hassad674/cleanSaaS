@@ -14,4 +14,5 @@ type BlogRepository interface {
 	Delete(ctx context.Context, id string) error
 	List(ctx context.Context, status string, tag string, offset, limit int) ([]*blog.Post, int, error)
 	ListTags(ctx context.Context) (map[string]int, error)
+	Count(ctx context.Context) (int, error)
 }

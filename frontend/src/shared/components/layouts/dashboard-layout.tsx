@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { siteConfig } from "@/config/site";
 import { cn } from "@/shared/lib/utils";
 import { useAuth } from "@/shared/hooks/use-auth";
+import { ThemeToggle } from "@/shared/components/theme-toggle";
 
 export function DashboardLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -33,22 +34,28 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
             </Link>
           ))}
         </nav>
-        {user && (
-          <div className="border-t border-sidebar-border pt-4 mt-4">
-            <p className="text-sm font-medium text-sidebar-foreground px-3 truncate">
-              {user.name}
-            </p>
-            <p className="text-xs text-sidebar-foreground/60 px-3 truncate mb-2">
-              {user.email}
-            </p>
-            <button
-              onClick={logout}
-              className="w-full text-left px-3 py-2 rounded-lg text-sm text-sidebar-foreground/60 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground transition-colors"
-            >
-              Log out
-            </button>
+        <div className="border-t border-sidebar-border pt-4 mt-4">
+          <div className="flex items-center justify-between px-3 mb-2">
+            <span className="text-xs text-sidebar-foreground/60">Theme</span>
+            <ThemeToggle />
           </div>
-        )}
+          {user && (
+            <>
+              <p className="text-sm font-medium text-sidebar-foreground px-3 truncate">
+                {user.name}
+              </p>
+              <p className="text-xs text-sidebar-foreground/60 px-3 truncate mb-2">
+                {user.email}
+              </p>
+              <button
+                onClick={logout}
+                className="w-full text-left px-3 py-2 rounded-lg text-sm text-sidebar-foreground/60 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground transition-colors"
+              >
+                Log out
+              </button>
+            </>
+          )}
+        </div>
       </aside>
 
       {/* Mobile top bar */}
@@ -57,14 +64,17 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
           <Link href="/" className="text-lg font-bold tracking-tight">
             {siteConfig.name}
           </Link>
-          {user && (
-            <button
-              onClick={logout}
-              className="text-sm text-muted-foreground hover:text-foreground transition-colors"
-            >
-              Log out
-            </button>
-          )}
+          <div className="flex items-center gap-2">
+            <ThemeToggle />
+            {user && (
+              <button
+                onClick={logout}
+                className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+              >
+                Log out
+              </button>
+            )}
+          </div>
         </header>
         <main className="flex-1 p-4 sm:p-6 lg:p-8 overflow-auto">{children}</main>
       </div>

@@ -104,6 +104,11 @@ func (h *AIHandler) SendMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if len(req.Content) > 32000 {
+		response.Error(w, http.StatusBadRequest, "message too long (max 32000 characters)")
+		return
+	}
+
 	reply, err := h.svc.SendMessage(r.Context(), userID, convID, req.Content)
 	if err != nil {
 		response.HandleDomainError(w, err)
@@ -126,6 +131,11 @@ func (h *AIHandler) StreamMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if len(req.Content) > 32000 {
+		response.Error(w, http.StatusBadRequest, "message too long (max 32000 characters)")
+		return
+	}
+
 	// Set SSE headers
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
@@ -140,8 +150,9 @@ func (h *AIHandler) StreamMessage(w http.ResponseWriter, r *http.Request) {
 	sseWriter := &sseWriter{w: w, flusher: flusher}
 
 	if err := h.svc.StreamMessage(r.Context(), userID, convID, req.Content, sseWriter); err != nil {
-		// If headers already sent, write error as SSE event
-		fmt.Fprintf(w, "event: error\ndata: %s\n\n", err.Error())
+		// If headers already sent, write error as SSE event.
+		// Never expose internal error details to the client.
+		fmt.Fprintf(w, "event: error\ndata: an error occurred while processing your message\n\n")
 		flusher.Flush()
 		return
 	}

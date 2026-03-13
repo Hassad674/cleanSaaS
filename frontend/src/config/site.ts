@@ -5,12 +5,14 @@ export const siteConfig = {
   nav: {
     marketing: [
       { label: "Features", href: "/#features" },
+      { label: "Demo", href: "/demo" },
       { label: "Pricing", href: "/pricing" },
       { label: "Blog", href: "/blog" },
       { label: "Docs", href: "/docs" },
     ],
     dashboard: [
       { label: "Dashboard", href: "/dashboard", icon: "home" },
+      { label: "Teams", href: "/teams", icon: "users" },
       { label: "AI Chat", href: "/ai", icon: "bot" },
       { label: "Files", href: "/files", icon: "folder" },
       { label: "Notifications", href: "/notifications", icon: "bell" },

@@ -21,6 +21,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/credentials v1.19.11
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.97.0
 	github.com/google/generative-ai-go v0.20.1
+	github.com/gorilla/websocket v1.5.3
 	github.com/stripe/stripe-go/v82 v82.5.1
 	google.golang.org/api v0.271.0
 )

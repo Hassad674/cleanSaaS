@@ -122,6 +122,9 @@ func (r *BlogRepository) List(ctx context.Context, status string, tag string, of
 		}
 		posts = append(posts, p)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, fmt.Errorf("iterating blog posts: %w", err)
+	}
 
 	return posts, total, nil
 }
@@ -146,7 +149,19 @@ func (r *BlogRepository) ListTags(ctx context.Context) (map[string]int, error) {
 		}
 		tags[tag] = count
 	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterating tags: %w", err)
+	}
 	return tags, nil
+}
+
+func (r *BlogRepository) Count(ctx context.Context) (int, error) {
+	var count int
+	err := r.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM blog_posts`).Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("counting blog posts: %w", err)
+	}
+	return count, nil
 }
 
 func (r *BlogRepository) scanPost(row *sql.Row) (*blog.Post, error) {

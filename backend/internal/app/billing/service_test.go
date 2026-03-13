@@ -41,6 +41,9 @@ func (m *mockUserRepo) Update(ctx context.Context, u *user.User) error {
 	}
 	return nil
 }
+func (m *mockUserRepo) FindByStripeID(_ context.Context, _ string) (*user.User, error) {
+	return nil, domain.ErrNotFound
+}
 func (m *mockUserRepo) Delete(_ context.Context, _ string) error { return nil }
 func (m *mockUserRepo) List(ctx context.Context, offset, limit int) ([]*user.User, int, error) {
 	if m.listFn != nil {
