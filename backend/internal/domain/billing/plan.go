@@ -1,12 +1,16 @@
 package billing
 
+import "time"
+
 type Plan struct {
 	ID            string
 	Name          string
 	StripePriceID string
-	Price         int64  // in cents
-	Currency      string // "usd", "eur"
+	PriceCents    int
 	Interval      string // "month", "year"
 	Features      []string
-	Active        bool
+	IsActive      bool
+	SortOrder     int
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
 }

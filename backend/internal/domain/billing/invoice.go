@@ -6,9 +6,9 @@ type Invoice struct {
 	ID              string
 	UserID          string
 	StripeInvoiceID string
-	Amount          int64
+	AmountCents     int
 	Currency        string
 	Status          string // "paid", "open", "void"
-	PaidAt          *time.Time
+	InvoiceURL      string
 	CreatedAt       time.Time
 }
