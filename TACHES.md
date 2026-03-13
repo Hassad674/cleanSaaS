@@ -812,7 +812,7 @@ Update the checkbox (`[ ]` → `[x]`) in this file after completing each task.
 
 - [x] **10g. Test**: Blog service tests: create, list published, get by slug, filter by tag
 
-- [ ] **10h. Commit**: `feat: implement blog system (CRUD API, public pages, tags, SEO)`
+- [x] **10h. Commit**: `feat: implement blog system (CRUD API, public pages, tags, SEO)`
 
 ---
 
@@ -860,7 +860,7 @@ Update the checkbox (`[ ]` → `[x]`) in this file after completing each task.
 
 - [x] **11h. Wire admin routes in backend** — all `/api/admin/*` routes check user role is admin
 
-- [ ] **11i. Commit**: `feat: implement admin panel (Vite app with users, blog CMS, analytics dashboard)`
+- [x] **11i. Commit**: `feat: implement admin panel (Vite app with users, blog CMS, analytics dashboard)`
 
 ---
 
@@ -890,7 +890,7 @@ Update the checkbox (`[ ]` → `[x]`) in this file after completing each task.
 
 - [x] **12d. Test**: Test scheduler start/stop, test job execution
 
-- [ ] **12e. Commit**: `feat: implement background job scheduler with token cleanup jobs`
+- [x] **12e. Commit**: `feat: implement background job scheduler with token cleanup jobs`
 
 ---
 
@@ -918,7 +918,7 @@ Update the checkbox (`[ ]` → `[x]`) in this file after completing each task.
   - Blog posts: `Article` schema (author, datePublished, dateModified)
   - Pricing: `Product` schema with `Offer`
 
-- [ ] **13e. Commit**: `feat: implement SEO (metadata, sitemap, robots.txt, JSON-LD structured data)`
+- [x] **13e. Commit**: `feat: implement SEO (metadata, sitemap, robots.txt, JSON-LD structured data)`
 
 ---
 
@@ -962,14 +962,14 @@ Update the checkbox (`[ ]` → `[x]`) in this file after completing each task.
 
 - [x] **14e. Verify coverage**: `go test ./... -cover` — target 80%+ on domain/ and app/ packages. Log coverage in commit message.
 
-- [ ] **14f. Commit**: `test: add comprehensive unit tests for all domain entities and app services`
+- [x] **14f. Commit**: `test: add comprehensive unit tests for all domain entities and app services`
 
 ---
 
 ### TASK 15: Playwright E2E Tests
 > Playwright tests require both backend AND frontend running. Start them before running tests.
 
-- [ ] **15a. Install & setup Playwright**
+- [x] **15a. Install & setup Playwright**
   ```bash
   cd /home/hassad/Documents/boilerplateSaaS/frontend
   npm init playwright@latest
@@ -982,24 +982,24 @@ Update the checkbox (`[ ]` → `[x]`) in this file after completing each task.
   - `webServer` block to auto-start frontend dev server
   - `timeout: 30000` per test
 
-- [ ] **15b. Test helpers**
+- [x] **15b. Test helpers**
   - Create `frontend/e2e/helpers.ts`:
     - `login(page, email, password)` — fills login form and submits
     - `register(page, name, email, password)` — fills register form and submits
     - `API_URL` constant for direct API calls in test setup
 
-- [ ] **15c. Write core E2E tests**
+- [x] **15c. Write core E2E tests**
   - `e2e/auth.spec.ts` — register new user → redirected to dashboard → logout → login again → dashboard
   - `e2e/settings.spec.ts` — login → go to settings → update name → verify name changed
   - `e2e/blog.spec.ts` — visit /blog → see post list → click a post → verify title displayed
 
-- [ ] **15d. Run and validate**
+- [x] **15d. Run and validate**
   - Start backend: `cd backend && make run &` (or ensure it's running)
   - Run Playwright: `cd frontend && npx playwright test --reporter=list`
   - **Apply fix loop (section 1.3)**: if tests fail, fix → rerun, max 3 attempts per test
   - All E2E tests must pass before commit
 
-- [ ] **15e. Commit**: `test: add Playwright E2E tests for auth, settings, and blog flows`
+- [x] **15e. Commit**: `test: add Playwright E2E tests for auth, settings, and blog flows`
 
 ---
 
@@ -1037,19 +1037,19 @@ Update the checkbox (`[ ]` → `[x]`) in this file after completing each task.
     Hero → FeatureGrid → SpotlightAI → SpotlightAdmin → SpotlightArchitecture → Stack → Comparison → DX → CTA
     ```
 
-- [ ] **16e. Commit**: `feat: update landing page with feature grid, spotlights, and comparison`
+- [x] **16e. Commit**: `feat: update landing page with feature grid, spotlights, and comparison`
 
 ---
 
 ## 3. AFTER ALL TASKS
 
-- [ ] Run final check: `cd backend && go build ./... && go test ./... -count=1`
-- [ ] Run final check: `cd frontend && npx tsc --noEmit`
-- [ ] Run `/check` to verify architecture compliance
-- [ ] Verify no hardcoded colors: search frontend for `zinc-`, `gray-`, `slate-`, `white`, `black` in className strings
-- [ ] Verify no cross-feature imports in frontend
-- [ ] Verify no `.env` files are committed: `git status`
-- [ ] Update this file — all checkboxes should be `[x]`
+- [x] Run final check: `cd backend && go build ./... && go test ./... -count=1`
+- [x] Run final check: `cd frontend && npx tsc --noEmit`
+- [x] Run `/check` to verify architecture compliance
+- [x] Verify no hardcoded colors: search frontend for `zinc-`, `gray-`, `slate-`, `white`, `black` in className strings
+- [x] Verify no cross-feature imports in frontend
+- [x] Verify no `.env` files are committed: `git status`
+- [x] Update this file — all checkboxes should be `[x]`
 
 ---
 
