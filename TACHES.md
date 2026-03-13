@@ -365,7 +365,7 @@ Update the checkbox (`[ ]` → `[x]`) in this file after completing each task.
 ### TASK 2: Resend Email Adapter
 > Priority: HIGH — unlocks password reset and email verification
 
-- [ ] **2a. Email service port** — read `backend/internal/port/service/email.go`, verify interface is sufficient:
+- [x] **2a. Email service port** — read `backend/internal/port/service/email.go`, verify interface is sufficient:
   ```go
   type EmailService interface {
       Send(ctx context.Context, to, subject, htmlBody string) error
@@ -373,7 +373,7 @@ Update the checkbox (`[ ]` → `[x]`) in this file after completing each task.
   ```
   If it needs more methods (SendTemplate, etc.), update it.
 
-- [ ] **2b. Resend adapter**
+- [x] **2b. Resend adapter**
   - Create `backend/internal/adapter/resend/client.go` — Resend API client setup
   - Create `backend/internal/adapter/resend/email.go` — implements `service.EmailService`
   - Use `RESEND_API_KEY` from config
@@ -381,7 +381,7 @@ Update the checkbox (`[ ]` → `[x]`) in this file after completing each task.
   - Test recipient for local dev: `hassad.smara69@gmail.com`
   - Go dependency: `go get github.com/resend/resend-go/v2` (run from backend/)
 
-- [ ] **2c. Email templates**
+- [x] **2c. Email templates**
   - Create `backend/internal/adapter/resend/templates.go`
   - Templates as Go functions returning HTML strings (keep it simple, no template engine):
     - `WelcomeEmail(name string) (subject, body string)`
@@ -389,13 +389,13 @@ Update the checkbox (`[ ]` → `[x]`) in this file after completing each task.
     - `PasswordResetEmail(name, link string) (subject, body string)`
   - Clean, responsive HTML (inline CSS), matches design system colors (rose primary)
 
-- [ ] **2d. Wire in main.go**
+- [x] **2d. Wire in main.go**
   - Create Resend email service: `emailSvc := resend.NewEmailService(cfg.ResendKey)`
   - Pass to auth service: `appauth.NewService(userRepo, emailSvc, jwtMaker)`
 
-- [ ] **2e. Test**: Unit test for template generation (correct subject, body contains link)
+- [x] **2e. Test**: Unit test for template generation (correct subject, body contains link)
 
-- [ ] **2f. Commit**: `feat: implement Resend email adapter with templates`
+- [x] **2f. Commit**: `feat: implement Resend email adapter with templates`
 
 ---
 

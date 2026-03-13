@@ -15,6 +15,7 @@ import (
 	appuser "github.com/hassad/boilerplateSaaS/backend/internal/app/user"
 	"github.com/hassad/boilerplateSaaS/backend/internal/config"
 	"github.com/hassad/boilerplateSaaS/backend/internal/handler"
+	"github.com/hassad/boilerplateSaaS/backend/internal/port/service"
 	"github.com/hassad/boilerplateSaaS/backend/pkg/jwt"
 )
 
@@ -38,7 +39,7 @@ func main() {
 	jwtMaker := jwt.NewMaker(cfg.JWTSecret)
 
 	// External services
-	var emailSvc *resend.EmailService
+	var emailSvc service.EmailService
 	if cfg.ResendKey != "" {
 		emailSvc = resend.NewEmailService(cfg.ResendKey)
 	}
