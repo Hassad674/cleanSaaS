@@ -11,9 +11,11 @@ import (
 
 	"github.com/hassad/boilerplateSaaS/backend/internal/adapter/postgres"
 	"github.com/hassad/boilerplateSaaS/backend/internal/adapter/resend"
+	adaptr2 "github.com/hassad/boilerplateSaaS/backend/internal/adapter/r2"
 	adaptstripe "github.com/hassad/boilerplateSaaS/backend/internal/adapter/stripe"
 	appauth "github.com/hassad/boilerplateSaaS/backend/internal/app/auth"
 	appbilling "github.com/hassad/boilerplateSaaS/backend/internal/app/billing"
+	appstorage "github.com/hassad/boilerplateSaaS/backend/internal/app/storage"
 	appuser "github.com/hassad/boilerplateSaaS/backend/internal/app/user"
 	"github.com/hassad/boilerplateSaaS/backend/internal/config"
 	"github.com/hassad/boilerplateSaaS/backend/internal/handler"
@@ -58,12 +60,21 @@ func main() {
 		billingSvc = appbilling.NewService(userRepo, subscriptionRepo, planRepo, invoiceRepo, paymentSvc, cfg.FrontendURL)
 	}
 
+	// Storage (optional — only if R2 keys set)
+	var storageSvc *appstorage.Service
+	if cfg.R2AccessKey != "" {
+		r2Client := adaptr2.NewClient(cfg.R2AccountID, cfg.R2AccessKey, cfg.R2SecretKey)
+		r2Storage := adaptr2.NewStorageService(r2Client, cfg.R2BucketName, cfg.R2PublicURL)
+		fileRepo := postgres.NewFileRepository(db)
+		storageSvc = appstorage.NewService(r2Storage, fileRepo)
+	}
+
 	// App services
 	authSvc := appauth.NewService(userRepo, passwordResetRepo, emailVerificationRepo, emailSvc, jwtMaker, cfg.FrontendURL)
 	userSvc := appuser.NewService(userRepo)
 
 	// Router
-	router := handler.NewRouter(authSvc, userSvc, billingSvc, cfg.JWTSecret, db, logger)
+	router := handler.NewRouter(authSvc, userSvc, billingSvc, storageSvc, cfg.JWTSecret, db, logger)
 
 	// HTTP server
 	srv := &http.Server{

@@ -612,18 +612,18 @@ Update the checkbox (`[ ]` → `[x]`) in this file after completing each task.
 ### TASK 7: Cloudflare R2 File Storage
 > Uses S3-compatible API
 
-- [ ] **7a. Migration**
+- [x] **7a. Migration**
   - Create `backend/migrations/005_create_files.up.sql`:
     - Table: `files` (id UUID, user_id FK, name TEXT, key TEXT UNIQUE, size_bytes BIGINT, content_type TEXT, url TEXT, created_at, updated_at)
   - Create matching `.down.sql`
   - Apply migration
 
-- [ ] **7b. Backend — adapter**
+- [x] **7b. Backend — adapter**
   - Create `backend/internal/adapter/r2/client.go` — S3-compatible client using `github.com/aws/aws-sdk-go-v2`
   - Create `backend/internal/adapter/r2/storage.go` — implements `service.StorageService`
   - Methods: `Upload(ctx, key string, data io.Reader, contentType string) (url string, err error)`, `Delete(ctx, key string) error`, `GetSignedURL(ctx, key string, duration time.Duration) (string, error)`
 
-- [ ] **7c. Backend — service + handler**
+- [x] **7c. Backend — service + handler**
   - Flesh out `app/storage/service.go`: Upload (validate type/size, store metadata in DB, upload to R2), Delete, List, GetByID
   - Create `adapter/postgres/file.go` — file metadata repository
   - Create `handler/storage.go`:
@@ -633,7 +633,7 @@ Update the checkbox (`[ ]` → `[x]`) in this file after completing each task.
   - Max file size: 50MB
   - Allowed types: images (jpg, png, gif, webp), videos (mp4, webm), documents (pdf, doc, txt)
 
-- [ ] **7d. Frontend**
+- [x] **7d. Frontend**
   - Create `frontend/src/features/storage/components/file-upload.tsx` — drag & drop zone + click to browse, progress bar, preview
   - Create `frontend/src/features/storage/components/file-list.tsx` — grid/list view of files with thumbnails
   - Create `frontend/src/features/storage/components/file-card.tsx` — individual file card with actions (download, delete)
@@ -642,11 +642,11 @@ Update the checkbox (`[ ]` → `[x]`) in this file after completing each task.
   - Update `frontend/src/app/(dashboard)/files/page.tsx` — removed placeholder, compose real components
   - The files page in dashboard nav already exists in site config (`/files`)
 
-- [ ] **7e. Wire in main.go**
+- [x] **7e. Wire in main.go**
 
-- [ ] **7f. Test**: Storage service tests (mocked R2 + file repo): upload valid, upload too large, upload forbidden type, delete own file, delete other's file (should fail)
+- [x] **7f. Test**: Storage service tests (mocked R2 + file repo): upload valid, upload too large, upload forbidden type, delete own file, delete other's file (should fail)
 
-- [ ] **7g. Commit**: `feat: implement R2 file storage (upload, list, delete with drag-and-drop UI)`
+- [x] **7g. Commit**: `feat: implement R2 file storage (upload, list, delete with drag-and-drop UI)`
 
 ---
 

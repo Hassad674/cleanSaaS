@@ -12,6 +12,7 @@ import (
 
 	"github.com/hassad/boilerplateSaaS/backend/internal/app/auth"
 	appbilling "github.com/hassad/boilerplateSaaS/backend/internal/app/billing"
+	appstorage "github.com/hassad/boilerplateSaaS/backend/internal/app/storage"
 	"github.com/hassad/boilerplateSaaS/backend/internal/app/user"
 	"github.com/hassad/boilerplateSaaS/backend/internal/handler/middleware"
 )
@@ -22,6 +23,7 @@ func NewRouter(
 	authSvc *auth.Service,
 	userSvc *user.Service,
 	billingSvc *appbilling.Service,
+	storageSvc *appstorage.Service,
 	jwtSecret string,
 	db *sql.DB,
 	logger *slog.Logger,
@@ -83,6 +85,14 @@ func NewRouter(
 			r.Post("/billing/cancel", billingHandler.CancelSubscription)
 			r.Post("/billing/portal", billingHandler.CreatePortalSession)
 			r.Get("/billing/invoices", billingHandler.GetInvoices)
+		}
+
+		// Storage (authenticated)
+		if storageSvc != nil {
+			storageHandler := NewStorageHandler(storageSvc)
+			r.Post("/files/upload", storageHandler.Upload)
+			r.Get("/files", storageHandler.List)
+			r.Delete("/files/{id}", storageHandler.Delete)
 		}
 	})
 
