@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"runtime"
 	"syscall"
 	"time"
 
@@ -16,13 +17,15 @@ import (
 	adaptstripe "github.com/hassad/boilerplateSaaS/backend/internal/adapter/stripe"
 	appai "github.com/hassad/boilerplateSaaS/backend/internal/app/ai"
 	appauth "github.com/hassad/boilerplateSaaS/backend/internal/app/auth"
-	appnotif "github.com/hassad/boilerplateSaaS/backend/internal/app/notification"
 	appbilling "github.com/hassad/boilerplateSaaS/backend/internal/app/billing"
+	appblog "github.com/hassad/boilerplateSaaS/backend/internal/app/blog"
+	appnotif "github.com/hassad/boilerplateSaaS/backend/internal/app/notification"
 	appstorage "github.com/hassad/boilerplateSaaS/backend/internal/app/storage"
 	appuser "github.com/hassad/boilerplateSaaS/backend/internal/app/user"
 	"github.com/hassad/boilerplateSaaS/backend/internal/config"
 	"github.com/hassad/boilerplateSaaS/backend/internal/handler"
 	"github.com/hassad/boilerplateSaaS/backend/internal/port/service"
+	"github.com/hassad/boilerplateSaaS/backend/pkg/jobs"
 	"github.com/hassad/boilerplateSaaS/backend/pkg/jwt"
 )
 
@@ -89,12 +92,16 @@ func main() {
 	notificationRepo := postgres.NewNotificationRepository(db)
 	notifSvc := appnotif.NewService(notificationRepo)
 
+	// Blog
+	blogRepo := postgres.NewBlogRepository(db)
+	blogSvc := appblog.NewService(blogRepo)
+
 	// App services
 	authSvc := appauth.NewService(userRepo, passwordResetRepo, emailVerificationRepo, emailSvc, jwtMaker, cfg.FrontendURL)
 	userSvc := appuser.NewService(userRepo)
 
 	// Router
-	router := handler.NewRouter(authSvc, userSvc, billingSvc, storageSvc, aiSvc, notifSvc, cfg.JWTSecret, db, logger)
+	router := handler.NewRouter(authSvc, userSvc, billingSvc, storageSvc, aiSvc, notifSvc, blogSvc, cfg.JWTSecret, db, logger)
 
 	// HTTP server
 	srv := &http.Server{
@@ -104,6 +111,38 @@ func main() {
 		WriteTimeout: 15 * time.Second,
 		IdleTimeout:  60 * time.Second,
 	}
+
+	// Background job scheduler
+	scheduler := jobs.NewScheduler(logger)
+	scheduler.Register(jobs.Job{
+		Name:     "clean-expired-password-resets",
+		Interval: 1 * time.Hour,
+		Fn: func(ctx context.Context) error {
+			return passwordResetRepo.DeleteExpired(ctx)
+		},
+	})
+	scheduler.Register(jobs.Job{
+		Name:     "clean-expired-email-verifications",
+		Interval: 1 * time.Hour,
+		Fn: func(ctx context.Context) error {
+			return emailVerificationRepo.DeleteExpired(ctx)
+		},
+	})
+	scheduler.Register(jobs.Job{
+		Name:     "log-system-stats",
+		Interval: 5 * time.Minute,
+		Fn: func(_ context.Context) error {
+			stats := db.Stats()
+			logger.Info("system stats",
+				slog.Int("goroutines", runtime.NumGoroutine()),
+				slog.Int("db_open_connections", stats.OpenConnections),
+				slog.Int("db_in_use", stats.InUse),
+				slog.Int("db_idle", stats.Idle),
+			)
+			return nil
+		},
+	})
+	scheduler.Start(context.Background())
 
 	// Start server in goroutine
 	go func() {
@@ -120,6 +159,8 @@ func main() {
 	sig := <-quit
 
 	logger.Info("shutdown signal received", slog.String("signal", sig.String()))
+
+	scheduler.Stop()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()

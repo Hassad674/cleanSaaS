@@ -13,6 +13,7 @@ import (
 	appai "github.com/hassad/boilerplateSaaS/backend/internal/app/ai"
 	"github.com/hassad/boilerplateSaaS/backend/internal/app/auth"
 	appbilling "github.com/hassad/boilerplateSaaS/backend/internal/app/billing"
+	appblog "github.com/hassad/boilerplateSaaS/backend/internal/app/blog"
 	appnotif "github.com/hassad/boilerplateSaaS/backend/internal/app/notification"
 	appstorage "github.com/hassad/boilerplateSaaS/backend/internal/app/storage"
 	"github.com/hassad/boilerplateSaaS/backend/internal/app/user"
@@ -28,6 +29,7 @@ func NewRouter(
 	storageSvc *appstorage.Service,
 	aiSvc *appai.Service,
 	notifSvc *appnotif.Service,
+	blogSvc *appblog.Service,
 	jwtSecret string,
 	db *sql.DB,
 	logger *slog.Logger,
@@ -66,6 +68,12 @@ func NewRouter(
 		r.Get("/billing/plans", billingHandler.GetPlans)
 		r.Post("/webhooks/stripe", billingHandler.HandleWebhook)
 	}
+
+	// Public blog routes
+	blogHandler := NewBlogHandler(blogSvc)
+	r.Get("/blog/posts", blogHandler.ListPublished)
+	r.Get("/blog/posts/{slug}", blogHandler.GetBySlug)
+	r.Get("/blog/tags", blogHandler.ListTags)
 
 	// Protected routes
 	r.Group(func(r chi.Router) {
@@ -116,6 +124,21 @@ func NewRouter(
 			r.Post("/ai/conversations/{id}/stream", aiHandler.StreamMessage)
 			r.Delete("/ai/conversations/{id}", aiHandler.DeleteConversation)
 		}
+
+		// Admin routes (require admin role)
+		r.Group(func(r chi.Router) {
+			r.Use(middleware.RequireAdmin)
+
+			adminHandler := NewAdminHandler(userSvc, blogSvc)
+			r.Get("/admin/stats", adminHandler.DashboardStats)
+			r.Get("/admin/users", adminHandler.ListUsers)
+			r.Put("/admin/users/{id}/role", adminHandler.UpdateUserRole)
+
+			r.Get("/admin/blog/posts", blogHandler.AdminList)
+			r.Post("/admin/blog/posts", blogHandler.Create)
+			r.Put("/admin/blog/posts/{id}", blogHandler.Update)
+			r.Delete("/admin/blog/posts/{id}", blogHandler.Delete)
+		})
 	})
 
 	return r
