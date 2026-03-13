@@ -30,3 +30,17 @@ export async function resetPassword(token: string, password: string) {
     body: { token, password },
   });
 }
+
+export async function verifyEmail(token: string) {
+  return api<{ message: string }>("/auth/verify-email", {
+    method: "POST",
+    body: { token },
+  });
+}
+
+export async function resendVerification(authToken: string) {
+  return api<{ message: string }>("/auth/resend-verification", {
+    method: "POST",
+    token: authToken,
+  });
+}

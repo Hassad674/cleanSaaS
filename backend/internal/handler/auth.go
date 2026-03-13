@@ -7,6 +7,7 @@ import (
 	"github.com/hassad/boilerplateSaaS/backend/internal/app/auth"
 	"github.com/hassad/boilerplateSaaS/backend/internal/handler/dto/request"
 	"github.com/hassad/boilerplateSaaS/backend/internal/handler/dto/response"
+	"github.com/hassad/boilerplateSaaS/backend/internal/handler/middleware"
 )
 
 type AuthHandler struct {
@@ -80,6 +81,45 @@ func (h *AuthHandler) ForgotPassword(w http.ResponseWriter, r *http.Request) {
 
 	response.JSON(w, http.StatusOK, map[string]string{
 		"message": "if an account with that email exists, a reset link has been sent",
+	})
+}
+
+func (h *AuthHandler) VerifyEmail(w http.ResponseWriter, r *http.Request) {
+	var req request.VerifyEmailRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		response.Error(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	if req.Token == "" {
+		response.Error(w, http.StatusBadRequest, "token is required")
+		return
+	}
+
+	if err := h.svc.VerifyEmail(r.Context(), req.Token); err != nil {
+		response.HandleDomainError(w, err)
+		return
+	}
+
+	response.JSON(w, http.StatusOK, map[string]string{
+		"message": "email verified successfully",
+	})
+}
+
+func (h *AuthHandler) ResendVerification(w http.ResponseWriter, r *http.Request) {
+	userID := middleware.UserIDFromContext(r.Context())
+	if userID == "" {
+		response.Error(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	if err := h.svc.ResendVerification(r.Context(), userID); err != nil {
+		response.HandleDomainError(w, err)
+		return
+	}
+
+	response.JSON(w, http.StatusOK, map[string]string{
+		"message": "verification email sent",
 	})
 }
 

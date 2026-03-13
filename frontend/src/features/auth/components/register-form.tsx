@@ -30,7 +30,11 @@ export function RegisterForm() {
 
     if (res.data) {
       setToken(res.data.token);
-      router.push("/dashboard");
+      if (!res.data.user.email_verified) {
+        router.push("/dashboard?verify=1");
+      } else {
+        router.push("/dashboard");
+      }
     }
   }
 

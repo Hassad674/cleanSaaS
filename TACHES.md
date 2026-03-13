@@ -475,28 +475,28 @@ Update the checkbox (`[ ]` → `[x]`) in this file after completing each task.
 ### TASK 5: Email Verification
 > Depends on: Task 2 (Resend)
 
-- [ ] **5a. Migration**
+- [x] **5a. Migration**
   - Create `backend/migrations/003_create_email_verifications.up.sql`:
     - Table: `email_verifications` (id, user_id FK, token UNIQUE, expires_at, created_at)
   - Create matching `.down.sql`
   - Apply: `make migrate-up`
 
-- [ ] **5b. Backend**
+- [x] **5b. Backend**
   - After registration, generate verification token and send email
   - `POST /api/auth/verify-email` — takes token, marks user `email_verified = true`
   - `POST /api/auth/resend-verification` — authenticated, resends verification email
   - Rate limit resend (max 3/hour)
 
-- [ ] **5c. Frontend**
+- [x] **5c. Frontend**
   - Create `frontend/src/app/(auth)/verify-email/page.tsx`
   - Show "Check your email" message after registration
   - Handle token from URL query param, call verify endpoint
   - Show success/error state
   - Add resend button
 
-- [ ] **5d. Test**: Service test — verify valid token, expired token, already verified user
+- [x] **5d. Test**: Service test — verify valid token, expired token, already verified user
 
-- [ ] **5e. Commit**: `feat: implement email verification flow`
+- [x] **5e. Commit**: `feat: implement email verification flow`
 
 ---
 

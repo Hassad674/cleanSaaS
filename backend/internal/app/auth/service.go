@@ -17,26 +17,29 @@ import (
 )
 
 type Service struct {
-	users       repository.UserRepository
-	resets      repository.PasswordResetRepository
-	email       service.EmailService
-	jwtMaker    *jwt.Maker
-	frontendURL string
+	users         repository.UserRepository
+	resets        repository.PasswordResetRepository
+	verifications repository.EmailVerificationRepository
+	email         service.EmailService
+	jwtMaker      *jwt.Maker
+	frontendURL   string
 }
 
 func NewService(
 	users repository.UserRepository,
 	resets repository.PasswordResetRepository,
+	verifications repository.EmailVerificationRepository,
 	email service.EmailService,
 	jwtMaker *jwt.Maker,
 	frontendURL string,
 ) *Service {
 	return &Service{
-		users:       users,
-		resets:      resets,
-		email:       email,
-		jwtMaker:    jwtMaker,
-		frontendURL: frontendURL,
+		users:         users,
+		resets:        resets,
+		verifications: verifications,
+		email:         email,
+		jwtMaker:      jwtMaker,
+		frontendURL:   frontendURL,
 	}
 }
 
@@ -61,6 +64,11 @@ func (s *Service) Register(ctx context.Context, email, name, password string) (*
 
 	if err := s.users.Create(ctx, u); err != nil {
 		return nil, "", err
+	}
+
+	// Send verification email asynchronously (don't block registration)
+	if s.email != nil && s.verifications != nil {
+		_ = s.sendVerificationEmail(ctx, u)
 	}
 
 	token, err := s.jwtMaker.Generate(u.ID, string(u.Role))
@@ -155,6 +163,89 @@ func (s *Service) ForgotPassword(ctx context.Context, email, frontendURL string)
 		}); err != nil {
 			return fmt.Errorf("sending password reset email: %w", err)
 		}
+	}
+
+	return nil
+}
+
+// VerifyEmail validates a verification token and marks the user's email as verified.
+func (s *Service) VerifyEmail(ctx context.Context, token string) error {
+	ev, err := s.verifications.FindByToken(ctx, token)
+	if err != nil {
+		return domain.ErrInvalidToken
+	}
+
+	if time.Now().After(ev.ExpiresAt) {
+		return domain.ErrExpiredToken
+	}
+
+	u, err := s.users.FindByID(ctx, ev.UserID)
+	if err != nil {
+		return fmt.Errorf("finding user for email verification: %w", err)
+	}
+
+	if u.EmailVerified {
+		// Already verified — clean up token and return success
+		_ = s.verifications.DeleteByUserID(ctx, u.ID)
+		return nil
+	}
+
+	u.VerifyEmail()
+	if err := s.users.Update(ctx, u); err != nil {
+		return fmt.Errorf("updating user email verified: %w", err)
+	}
+
+	// Clean up all verification tokens for this user
+	if err := s.verifications.DeleteByUserID(ctx, u.ID); err != nil {
+		return fmt.Errorf("deleting verification tokens: %w", err)
+	}
+
+	return nil
+}
+
+// ResendVerification generates a new verification token and sends it to the user.
+func (s *Service) ResendVerification(ctx context.Context, userID string) error {
+	u, err := s.users.FindByID(ctx, userID)
+	if err != nil {
+		return fmt.Errorf("finding user for resend verification: %w", err)
+	}
+
+	if u.EmailVerified {
+		return nil // Already verified, no-op
+	}
+
+	// Delete old tokens
+	if err := s.verifications.DeleteByUserID(ctx, u.ID); err != nil {
+		return fmt.Errorf("deleting old verification tokens: %w", err)
+	}
+
+	return s.sendVerificationEmail(ctx, u)
+}
+
+// sendVerificationEmail generates a token and sends a verification email.
+func (s *Service) sendVerificationEmail(ctx context.Context, u *user.User) error {
+	tokenBytes := make([]byte, 32)
+	if _, err := rand.Read(tokenBytes); err != nil {
+		return fmt.Errorf("generating verification token: %w", err)
+	}
+	token := hex.EncodeToString(tokenBytes)
+
+	ev := &repository.EmailVerification{
+		UserID:    u.ID,
+		Token:     token,
+		ExpiresAt: time.Now().Add(24 * time.Hour),
+	}
+	if err := s.verifications.Create(ctx, ev); err != nil {
+		return fmt.Errorf("storing email verification: %w", err)
+	}
+
+	verifyLink := fmt.Sprintf("%s/verify-email?token=%s", s.frontendURL, token)
+
+	if err := s.email.SendTemplate(ctx, u.Email, "verification", map[string]string{
+		"name": u.Name,
+		"link": verifyLink,
+	}); err != nil {
+		return fmt.Errorf("sending verification email: %w", err)
 	}
 
 	return nil

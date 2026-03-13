@@ -19,3 +19,7 @@ type ResetPasswordRequest struct {
 	Token    string `json:"token"`
 	Password string `json:"password"`
 }
+
+type VerifyEmailRequest struct {
+	Token string `json:"token"`
+}

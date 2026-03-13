@@ -49,11 +49,16 @@ func NewRouter(
 		r.Post("/login", authHandler.Login)
 		r.Post("/forgot-password", authHandler.ForgotPassword)
 		r.Post("/reset-password", authHandler.ResetPassword)
+		r.Post("/verify-email", authHandler.VerifyEmail)
 	})
 
 	// Protected routes
 	r.Group(func(r chi.Router) {
 		r.Use(middleware.Auth(jwtSecret))
+
+		// Auth actions requiring authentication
+		authHandler := NewAuthHandler(authSvc)
+		r.Post("/auth/resend-verification", authHandler.ResendVerification)
 
 		userHandler := NewUserHandler(userSvc)
 		r.Get("/users/me", userHandler.GetProfile)

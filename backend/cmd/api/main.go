@@ -35,6 +35,7 @@ func main() {
 	// Repositories
 	userRepo := postgres.NewUserRepository(db)
 	passwordResetRepo := postgres.NewPasswordResetRepository(db)
+	emailVerificationRepo := postgres.NewEmailVerificationRepository(db)
 
 	// JWT
 	jwtMaker := jwt.NewMaker(cfg.JWTSecret)
@@ -46,7 +47,7 @@ func main() {
 	}
 
 	// App services
-	authSvc := appauth.NewService(userRepo, passwordResetRepo, emailSvc, jwtMaker, cfg.FrontendURL)
+	authSvc := appauth.NewService(userRepo, passwordResetRepo, emailVerificationRepo, emailSvc, jwtMaker, cfg.FrontendURL)
 	userSvc := appuser.NewService(userRepo)
 
 	// Router
