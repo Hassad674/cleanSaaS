@@ -16,3 +16,17 @@ export async function register(email: string, name: string, password: string) {
     body: { email, name, password },
   });
 }
+
+export async function forgotPassword(email: string) {
+  return api<{ message: string }>("/auth/forgot-password", {
+    method: "POST",
+    body: { email },
+  });
+}
+
+export async function resetPassword(token: string, password: string) {
+  return api<{ message: string }>("/auth/reset-password", {
+    method: "POST",
+    body: { token, password },
+  });
+}

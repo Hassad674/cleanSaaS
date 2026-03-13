@@ -78,7 +78,7 @@ export function LoginForm() {
       </button>
 
       <div className="text-center text-sm text-muted-foreground space-y-2">
-        <Link href="/forgot-password" className="hover:underline block">
+        <Link href="/forgot-password" className="text-primary hover:underline text-sm block">
           Forgot password?
         </Link>
         <p>

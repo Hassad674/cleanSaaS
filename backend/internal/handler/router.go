@@ -47,6 +47,8 @@ func NewRouter(
 		authHandler := NewAuthHandler(authSvc)
 		r.Post("/register", authHandler.Register)
 		r.Post("/login", authHandler.Login)
+		r.Post("/forgot-password", authHandler.ForgotPassword)
+		r.Post("/reset-password", authHandler.ResetPassword)
 	})
 
 	// Protected routes

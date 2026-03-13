@@ -432,7 +432,7 @@ Update the checkbox (`[ ]` → `[x]`) in this file after completing each task.
 ### TASK 4: Forgot Password / Reset Password
 > Depends on: Task 2 (Resend)
 
-- [ ] **4a. Migration**
+- [x] **4a. Migration**
   - Create `backend/migrations/002_create_password_resets.up.sql`:
     ```sql
     CREATE TABLE IF NOT EXISTS password_resets (
@@ -449,26 +449,26 @@ Update the checkbox (`[ ]` → `[x]`) in this file after completing each task.
   - Create matching `.down.sql`
   - Run `cd backend && make migrate-up` to apply
 
-- [ ] **4b. Backend — domain + port**
+- [x] **4b. Backend — domain + port**
   - Add password reset token logic in auth service (or create new if cleaner)
   - Port: if needed, add `PasswordResetRepository` interface in `port/repository/`
   - Adapter: implement in `adapter/postgres/password_reset.go`
 
-- [ ] **4c. Backend — endpoints**
+- [x] **4c. Backend — endpoints**
   - `POST /api/auth/forgot-password` — takes email, generates token, sends email via Resend
   - `POST /api/auth/reset-password` — takes token + new password, validates, updates password
   - Both are PUBLIC (no auth required)
   - Rate limit the forgot-password endpoint (max 3/hour per email)
 
-- [ ] **4d. Frontend**
+- [x] **4d. Frontend**
   - Update `frontend/src/features/auth/components/forgot-password-form.tsx` (file exists but is placeholder)
   - Create `frontend/src/features/auth/components/reset-password-form.tsx`
   - Create page `frontend/src/app/(auth)/reset-password/page.tsx`
   - Add "Forgot password?" link on login form
 
-- [ ] **4e. Test**: Service test — request reset, use valid token, use expired token, use already-used token
+- [x] **4e. Test**: Service test — request reset, use valid token, use expired token, use already-used token
 
-- [ ] **4f. Commit**: `feat: implement forgot/reset password flow with email`
+- [x] **4f. Commit**: `feat: implement forgot/reset password flow with email`
 
 ---
 

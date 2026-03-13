@@ -60,6 +60,10 @@ func HandleDomainError(w http.ResponseWriter, err error) {
 		Error(w, http.StatusForbidden, "forbidden")
 	case errors.Is(err, domain.ErrValidation):
 		Error(w, http.StatusBadRequest, "validation error")
+	case errors.Is(err, domain.ErrExpiredToken):
+		Error(w, http.StatusBadRequest, "token expired")
+	case errors.Is(err, domain.ErrInvalidToken):
+		Error(w, http.StatusBadRequest, "invalid token")
 	default:
 		Error(w, http.StatusInternalServerError, "internal error")
 	}

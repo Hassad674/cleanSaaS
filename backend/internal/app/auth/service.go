@@ -2,7 +2,11 @@ package auth
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
+	"fmt"
+	"time"
 
 	"github.com/hassad/boilerplateSaaS/backend/internal/domain"
 	"github.com/hassad/boilerplateSaaS/backend/internal/domain/user"
@@ -13,13 +17,27 @@ import (
 )
 
 type Service struct {
-	users    repository.UserRepository
-	email    service.EmailService
-	jwtMaker *jwt.Maker
+	users       repository.UserRepository
+	resets      repository.PasswordResetRepository
+	email       service.EmailService
+	jwtMaker    *jwt.Maker
+	frontendURL string
 }
 
-func NewService(users repository.UserRepository, email service.EmailService, jwtMaker *jwt.Maker) *Service {
-	return &Service{users: users, email: email, jwtMaker: jwtMaker}
+func NewService(
+	users repository.UserRepository,
+	resets repository.PasswordResetRepository,
+	email service.EmailService,
+	jwtMaker *jwt.Maker,
+	frontendURL string,
+) *Service {
+	return &Service{
+		users:       users,
+		resets:      resets,
+		email:       email,
+		jwtMaker:    jwtMaker,
+		frontendURL: frontendURL,
+	}
 }
 
 func (s *Service) Register(ctx context.Context, email, name, password string) (*user.User, string, error) {
@@ -89,4 +107,96 @@ func (s *Service) OAuthCallback(ctx context.Context, oauthUser *service.OAuthUse
 	}
 
 	return u, token, nil
+}
+
+// ForgotPassword generates a password reset token and sends a reset email.
+// If the email is not found, it returns nil to avoid leaking user existence.
+func (s *Service) ForgotPassword(ctx context.Context, email, frontendURL string) error {
+	u, err := s.users.FindByEmail(ctx, email)
+	if errors.Is(err, domain.ErrNotFound) {
+		// Don't leak whether the user exists
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("finding user by email: %w", err)
+	}
+
+	// Generate a crypto-secure random token (32 bytes = 64 hex chars)
+	tokenBytes := make([]byte, 32)
+	if _, err := rand.Read(tokenBytes); err != nil {
+		return fmt.Errorf("generating reset token: %w", err)
+	}
+	token := hex.EncodeToString(tokenBytes)
+
+	// Store the reset token with 1 hour expiry
+	pr := &repository.PasswordReset{
+		UserID:    u.ID,
+		Token:     token,
+		ExpiresAt: time.Now().Add(1 * time.Hour),
+		Used:      false,
+		CreatedAt: time.Now(),
+	}
+	if err := s.resets.Create(ctx, pr); err != nil {
+		return fmt.Errorf("storing password reset: %w", err)
+	}
+
+	// Use the provided frontendURL, or fall back to the configured one
+	baseURL := frontendURL
+	if baseURL == "" {
+		baseURL = s.frontendURL
+	}
+	resetLink := fmt.Sprintf("%s/reset-password?token=%s", baseURL, token)
+
+	// Send the reset email
+	if s.email != nil {
+		if err := s.email.SendTemplate(ctx, u.Email, "password_reset", map[string]string{
+			"name": u.Name,
+			"link": resetLink,
+		}); err != nil {
+			return fmt.Errorf("sending password reset email: %w", err)
+		}
+	}
+
+	return nil
+}
+
+// ResetPassword validates a reset token and updates the user's password.
+func (s *Service) ResetPassword(ctx context.Context, token, newPassword string) error {
+	pr, err := s.resets.FindByToken(ctx, token)
+	if err != nil {
+		return domain.ErrInvalidToken
+	}
+
+	if pr.Used {
+		return domain.ErrInvalidToken
+	}
+
+	if time.Now().After(pr.ExpiresAt) {
+		return domain.ErrExpiredToken
+	}
+
+	// Hash the new password
+	hashed, err := hash.Password(newPassword)
+	if err != nil {
+		return fmt.Errorf("hashing new password: %w", err)
+	}
+
+	// Find the user and update password
+	u, err := s.users.FindByID(ctx, pr.UserID)
+	if err != nil {
+		return fmt.Errorf("finding user for password reset: %w", err)
+	}
+
+	u.PasswordHash = hashed
+	u.UpdatedAt = time.Now()
+	if err := s.users.Update(ctx, u); err != nil {
+		return fmt.Errorf("updating user password: %w", err)
+	}
+
+	// Mark the token as used
+	if err := s.resets.MarkUsed(ctx, pr.ID); err != nil {
+		return fmt.Errorf("marking reset token as used: %w", err)
+	}
+
+	return nil
 }
