@@ -4,6 +4,11 @@ import { PricingCards } from "@/features/billing/components/pricing-cards";
 export const metadata: Metadata = {
   title: "Pricing",
   description: "Simple, transparent pricing for every stage of your business.",
+  openGraph: {
+    title: "Pricing — CleanSaaS",
+    description: "Simple, transparent pricing for every stage of your business.",
+    type: "website",
+  },
 };
 
 export default function PricingPage() {

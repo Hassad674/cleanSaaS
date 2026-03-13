@@ -3,7 +3,10 @@ import { SettingsProfile } from "@/features/user/components/settings-profile";
 import { SettingsPassword } from "@/features/user/components/settings-password";
 import { SettingsDanger } from "@/features/user/components/settings-danger";
 
-export const metadata: Metadata = { title: "Settings" };
+export const metadata: Metadata = {
+  title: "Settings",
+  robots: { index: false, follow: false },
+};
 
 export default function SettingsPage() {
   return (
