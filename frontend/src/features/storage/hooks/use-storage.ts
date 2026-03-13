@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { useAuth } from "@/features/auth/hooks/use-auth";
+import { useAuth } from "@/shared/hooks/use-auth";
 import {
   getFiles,
   uploadFile as uploadFileAction,

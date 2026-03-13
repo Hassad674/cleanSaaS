@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { siteConfig } from "@/config/site";
 import { cn } from "@/shared/lib/utils";
-import { useAuth } from "@/features/auth/hooks/use-auth";
+import { useAuth } from "@/shared/hooks/use-auth";
 
 export function DashboardLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();

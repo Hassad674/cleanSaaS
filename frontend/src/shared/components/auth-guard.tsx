@@ -1,6 +1,6 @@
 "use client";
 
-import { useAuth } from "@/features/auth/hooks/use-auth";
+import { useAuth } from "@/shared/hooks/use-auth";
 import { Loading } from "@/shared/components/loading";
 
 export function AuthGuard({ children }: { children: React.ReactNode }) {

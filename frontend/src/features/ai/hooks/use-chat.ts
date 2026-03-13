@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import { useAuth } from "@/features/auth/hooks/use-auth";
+import { useAuth } from "@/shared/hooks/use-auth";
 import {
   getConversations as getConversationsAction,
   createConversation as createConversationAction,

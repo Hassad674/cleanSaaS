@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useAuth } from "@/features/auth/hooks/use-auth";
+import { useAuth } from "@/shared/hooks/use-auth";
 import { getInvoices } from "@/features/billing/actions/billing";
 import { formatCurrency, formatDate } from "@/shared/lib/utils";
 import { PAGINATION_DEFAULT_LIMIT } from "@/shared/lib/constants";

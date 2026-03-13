@@ -32,7 +32,12 @@ export function FileUpload({ onUpload, uploading }: FileUploadProps) {
 
     if (isImageType(file.type)) {
       const reader = new FileReader();
-      reader.onload = (e) => setPreview(e.target?.result as string);
+      reader.onload = (e) => {
+        const result = e.target?.result;
+        if (typeof result === "string") {
+          setPreview(result);
+        }
+      };
       reader.readAsDataURL(file);
     } else {
       setPreview(null);
