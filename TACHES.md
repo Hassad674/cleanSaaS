@@ -721,13 +721,13 @@ Update the checkbox (`[ ]` → `[x]`) in this file after completing each task.
 
 ### TASK 9: In-App Notifications
 
-- [ ] **9a. Migration**
+- [x] **9a. Migration**
   - Create `backend/migrations/007_create_notifications.up.sql`:
     - Table: `notifications` (id UUID, user_id FK, type TEXT, title TEXT, message TEXT, read BOOLEAN DEFAULT false, data JSONB DEFAULT '{}', created_at)
   - Create matching `.down.sql`
   - Apply migration
 
-- [ ] **9b. Backend**
+- [x] **9b. Backend**
   - Create `adapter/postgres/notification.go` — implements `NotificationRepository`
   - Flesh out `app/notification/service.go`: Send, MarkAsRead, MarkAllAsRead, GetUnread, List (paginated), GetUnreadCount
   - Create `handler/notification.go`:
@@ -736,7 +736,7 @@ Update the checkbox (`[ ]` → `[x]`) in this file after completing each task.
     - `PUT /api/notifications/:id/read` — mark one as read
     - `PUT /api/notifications/read-all` — mark all as read
 
-- [ ] **9c. Frontend**
+- [x] **9c. Frontend**
   - Create `frontend/src/features/notification/components/notification-bell.tsx` — bell icon with unread badge count
   - Create `frontend/src/features/notification/components/notification-dropdown.tsx` — dropdown list of recent notifications
   - Create `frontend/src/features/notification/components/notification-list.tsx` — full page notification list
@@ -745,11 +745,11 @@ Update the checkbox (`[ ]` → `[x]`) in this file after completing each task.
   - Add notification bell to `shared/components/layouts/dashboard-layout.tsx` header (import from feature in layout is OK since layout is in app/ layer)
   - Update `frontend/src/app/(dashboard)/notifications/page.tsx`
 
-- [ ] **9d. Wire in main.go**
+- [x] **9d. Wire in main.go**
 
-- [ ] **9e. Test**: Notification service tests: send, mark read, get unread count, list paginated
+- [x] **9e. Test**: Notification service tests: send, mark read, get unread count, list paginated
 
-- [ ] **9f. Commit**: `feat: implement in-app notifications with bell, dropdown, and mark-as-read`
+- [x] **9f. Commit**: `feat: implement in-app notifications with bell, dropdown, and mark-as-read`
 
 ---
 
