@@ -48,6 +48,10 @@ func (m *mockUserRepo) List(ctx context.Context, offset, limit int) ([]*user.Use
 	}
 	return nil, 0, nil
 }
+func (m *mockUserRepo) Search(_ context.Context, _ string, _, _ int) ([]*user.User, int, error) {
+	return nil, 0, nil
+}
+func (m *mockUserRepo) Count(_ context.Context) (int, error) { return 0, nil }
 
 type mockSubRepo struct {
 	createFn       func(ctx context.Context, s *domainbilling.Subscription) error

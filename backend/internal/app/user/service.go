@@ -71,3 +71,29 @@ func (s *Service) ChangePassword(ctx context.Context, userID, oldPassword, newPa
 func (s *Service) DeleteAccount(ctx context.Context, userID string) error {
 	return s.users.Delete(ctx, userID)
 }
+
+// Admin methods
+
+func (s *Service) ListUsers(ctx context.Context, search string, offset, limit int) ([]*domainuser.User, int, error) {
+	if search != "" {
+		return s.users.Search(ctx, search, offset, limit)
+	}
+	return s.users.List(ctx, offset, limit)
+}
+
+func (s *Service) UpdateRole(ctx context.Context, userID string, role string) (*domainuser.User, error) {
+	u, err := s.users.FindByID(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+
+	u.Role = domainuser.Role(role)
+	if err := s.users.Update(ctx, u); err != nil {
+		return nil, fmt.Errorf("updating role: %w", err)
+	}
+	return u, nil
+}
+
+func (s *Service) CountUsers(ctx context.Context) (int, error) {
+	return s.users.Count(ctx)
+}

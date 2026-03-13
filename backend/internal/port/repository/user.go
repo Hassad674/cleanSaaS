@@ -14,4 +14,6 @@ type UserRepository interface {
 	Update(ctx context.Context, u *user.User) error
 	Delete(ctx context.Context, id string) error
 	List(ctx context.Context, offset, limit int) ([]*user.User, int, error)
+	Search(ctx context.Context, query string, offset, limit int) ([]*user.User, int, error)
+	Count(ctx context.Context) (int, error)
 }

@@ -102,3 +102,41 @@ func (r *UserRepository) List(ctx context.Context, offset, limit int) ([]*user.U
 	}
 	return users, total, nil
 }
+
+func (r *UserRepository) Search(ctx context.Context, query string, offset, limit int) ([]*user.User, int, error) {
+	pattern := "%" + query + "%"
+
+	var total int
+	err := r.db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM users WHERE name ILIKE $1 OR email ILIKE $1`, pattern,
+	).Scan(&total)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	rows, err := r.db.QueryContext(ctx,
+		`SELECT id, email, name, password_hash, avatar_url, role, email_verified, stripe_id, provider, provider_id, created_at, updated_at
+		 FROM users WHERE name ILIKE $1 OR email ILIKE $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3`,
+		pattern, limit, offset,
+	)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+
+	var users []*user.User
+	for rows.Next() {
+		u := &user.User{}
+		if err := rows.Scan(&u.ID, &u.Email, &u.Name, &u.PasswordHash, &u.AvatarURL, &u.Role, &u.EmailVerified, &u.StripeID, &u.Provider, &u.ProviderID, &u.CreatedAt, &u.UpdatedAt); err != nil {
+			return nil, 0, err
+		}
+		users = append(users, u)
+	}
+	return users, total, nil
+}
+
+func (r *UserRepository) Count(ctx context.Context) (int, error) {
+	var count int
+	err := r.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM users`).Scan(&count)
+	return count, err
+}

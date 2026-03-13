@@ -55,6 +55,10 @@ func (m *mockUserRepo) Delete(_ context.Context, _ string) error { return nil }
 func (m *mockUserRepo) List(_ context.Context, _, _ int) ([]*user.User, int, error) {
 	return nil, 0, nil
 }
+func (m *mockUserRepo) Search(_ context.Context, _ string, _, _ int) ([]*user.User, int, error) {
+	return nil, 0, nil
+}
+func (m *mockUserRepo) Count(_ context.Context) (int, error) { return 0, nil }
 
 type mockResetRepo struct {
 	createFn      func(ctx context.Context, pr *repository.PasswordReset) error

@@ -37,6 +37,12 @@ func (m *mockUserRepo) Delete(ctx context.Context, id string) error {
 func (m *mockUserRepo) List(_ context.Context, _, _ int) ([]*domainuser.User, int, error) {
 	return nil, 0, nil
 }
+func (m *mockUserRepo) Search(_ context.Context, _ string, _, _ int) ([]*domainuser.User, int, error) {
+	return nil, 0, nil
+}
+func (m *mockUserRepo) Count(_ context.Context) (int, error) {
+	return 0, nil
+}
 
 func TestService_ChangePassword_Success(t *testing.T) {
 	hashed, _ := hash.Password("oldpassword")
