@@ -26,7 +26,53 @@ Before each task, check what's already scaffolded. Many domain entities, ports, 
 
 Run `find backend/internal -name "*.go" | sort` and `find frontend/src -name "*.ts" -o -name "*.tsx" | sort` to see the current file tree.
 
-### 0.3 — Verify local environment works
+### 0.3 — Understand the end goal: how features will be presented
+
+All features you build will be showcased on the **landing page** (Task 16). Keep this in mind from Task 1 onwards — it affects how you design every UI component.
+
+**Landing page structure:**
+```
+1. HERO — "Ship your SaaS in weeks, not months" (already exists)
+2. FEATURE GRID — 12 cards, each representing one module:
+   Auth | Billing | AI Chat | Storage | Email | Notifications |
+   Blog CMS | Admin Panel | Background Jobs | Security | Architecture | DX
+3. SPOTLIGHT: AI Chat — screenshot area + description
+4. SPOTLIGHT: Admin Panel — screenshot area + description
+5. SPOTLIGHT: Architecture — hexagonal diagram + description
+6. STACK — Technologies (already exists)
+7. COMPARISON — Mini table vs OpenSaaS
+8. DX — Developer experience (already exists)
+9. CTA — "Get started in 5 minutes" (already exists)
+```
+
+**What this means for you while building features:**
+- Each feature's dashboard page must look **polished and demo-ready** — it could appear in a screenshot
+- Use consistent card patterns across features: `bg-card border border-border rounded-xl p-6 shadow-sm`
+- Use consistent page titles: `<h1 className="text-2xl font-bold">Feature Name</h1>`
+- Empty states should be beautiful (e.g., "No files yet" with an icon, not just blank)
+- Every feature should feel complete and usable, even with demo/seed data
+
+### 0.4 — Install test dependencies
+
+These MUST be installed before any coding begins:
+
+```bash
+# Backend — testify for assertions and mocks
+cd /home/hassad/Documents/boilerplateSaaS/backend
+go get github.com/stretchr/testify@latest
+go mod tidy
+
+# Frontend — vitest + testing-library for unit/component tests
+cd /home/hassad/Documents/boilerplateSaaS/frontend
+npm install -D vitest @vitejs/plugin-react @testing-library/react @testing-library/jest-dom @testing-library/user-event jsdom
+```
+
+After installing, verify:
+```bash
+cd /home/hassad/Documents/boilerplateSaaS/backend && go test ./... -count=1    # should pass (even if 0 tests)
+```
+
+### 0.5 — Verify local environment works
 
 ```bash
 cd /home/hassad/Documents/boilerplateSaaS && docker compose up -d    # DB must be running
@@ -77,7 +123,7 @@ After completing each task (not each sub-step, each TASK):
    cd /home/hassad/Documents/boilerplateSaaS/frontend && npx tsc --noEmit
    cd /home/hassad/Documents/boilerplateSaaS/backend && go test ./... -count=1 -short
    ```
-3. ALL THREE must pass. If they don't, fix before committing.
+3. ALL THREE must pass. If they don't, enter the fix loop from section 1.3 until green. NEVER commit with failures.
 4. Commit with conventional message:
    ```bash
    git commit -m "$(cat <<'EOF'
@@ -91,32 +137,115 @@ After completing each task (not each sub-step, each TASK):
    ```
 5. NEVER commit `.env` files, `node_modules/`, `.next/`, or files with secrets.
 
-### 1.3 — Testing rules
+### 1.3 — Testing rules & validation loop
 
+**Every feature sub-task that creates code MUST be followed by this loop:**
+
+```
+┌─────────────────────────────────┐
+│  1. Write implementation code   │
+│  2. Write tests for that code   │
+│  3. Run tests                   │
+│     ├── ALL PASS → continue ✅  │
+│     └── FAIL →                  │
+│         4. Read error output    │
+│         5. Fix the bug (code    │
+│            or test, whichever   │
+│            is actually wrong)   │
+│         6. Go back to step 3    │
+│         (max 3 fix attempts     │
+│          per failing test)      │
+│         If still failing after  │
+│         3 attempts → blocker    │
+│         policy (section 1.4)    │
+└─────────────────────────────────┘
+```
+
+**Test writing rules:**
 - Write unit tests for EVERY domain entity and EVERY app service method you create
 - Domain tests: test validation, business rules, edge cases
 - App service tests: mock ALL ports (repositories, external services), test orchestration logic
 - Test file lives next to source: `service.go` → `service_test.go`
 - Name pattern: `TestServiceName_MethodName_Scenario`
-- Run tests after writing them to confirm they pass
+- Use `testify` for Go: `assert.Equal(t, expected, actual)`, `assert.NoError(t, err)`, `assert.ErrorIs(t, err, domain.ErrNotFound)`
+- Use `vitest` + `@testing-library/react` for frontend components
+
+**Running tests:**
+```bash
+# Backend — specific feature
+cd /home/hassad/Documents/boilerplateSaaS/backend && go test ./internal/domain/{feature}/... ./internal/app/{feature}/... -v -count=1
+
+# Backend — all
+cd /home/hassad/Documents/boilerplateSaaS/backend && go test ./... -v -count=1
+
+# Frontend — all
+cd /home/hassad/Documents/boilerplateSaaS/frontend && npx vitest run
+
+# Playwright E2E (only after Task 15 setup)
+cd /home/hassad/Documents/boilerplateSaaS/frontend && npx playwright test
+```
+
+**CRITICAL: NEVER commit code with failing tests.** The validation loop must complete (all green) before moving to the next sub-task.
+
+**NEVER skip, delete, or `t.Skip()` a failing test to make the suite pass.** Fix the actual bug.
 
 ### 1.4 — Blocker policy
 
-If stuck on ANY issue for more than 30 minutes:
+**CRITICAL DISTINCTION: A long task is NOT a blocker.**
 
-1. Create `BLOCKED-taskX.md` at project root with:
+- **Long task** = you're making steady progress — writing code, creating files, things compile, you move from sub-step to sub-step. Stripe billing taking 2 hours is NORMAL. **Keep going.**
+- **Blocker** = you're hitting the SAME error repeatedly, tried 3+ different approaches, nothing works, no forward progress. **This is when you stop.**
+
+**The trigger is NOT total time on a task. It's time on the SAME specific problem without any progress.**
+
+#### Type A — Test failure (max 3 fix attempts per test)
+If a specific test fails and you cannot fix it after **3 different fix attempts**:
+1. Comment the test with `// TODO: fix — <reason it fails>`
+2. Log it in `BLOCKED-taskX.md`
+3. **Continue with other sub-steps of the same task** — don't abandon the whole task for one test
+4. The feature code itself should still work — only the test is blocked
+
+#### Type B — Same error, no progress, 3+ approaches tried
+If you keep hitting the same error and have tried **3+ genuinely different approaches** without any progress:
+1. Create `BLOCKED-taskX.md` at project root:
    ```
-   # Blocked: Task X — <task name>
-   ## What failed
-   <exact error message or description>
-   ## What I tried
-   <list of approaches attempted>
-   ## Possible solutions
-   <ideas for fixing later>
+   # Blocked: Task X.Y — <specific sub-step name>
+   ## The error
+   <exact error message, copy-paste>
+   ## What I tried (minimum 3 approaches)
+   1. <approach 1 — what you did and what happened>
+   2. <approach 2 — what you did and what happened>
+   3. <approach 3 — what you did and what happened>
+   ## Possible solutions to investigate later
+   - <idea 1>
+   - <idea 2>
+   ## Working code committed
+   <yes/no — what was saved before skipping>
    ```
-2. Commit whatever working code exists for that task
-3. Move to the next task immediately
-4. Do NOT loop retrying the same approach
+2. Commit whatever working code exists so far
+3. **Skip only the blocked sub-step, not the entire task.** If 6c is blocked, try 6d, 6e, etc.
+4. Only skip the entire task if the blocker makes ALL remaining sub-steps impossible
+5. Move to the next task
+
+#### Type C — Compilation failure (HIGHEST PRIORITY)
+If `go build ./...` or `npx tsc --noEmit` fails after your changes:
+1. **TOP PRIORITY** — a broken build blocks EVERYTHING
+2. You have **10 minutes** to fix it
+3. If unfixable in 10 min, revert ONLY your latest sub-step: `git checkout -- <specific files you just changed>`
+4. If the whole task's changes are entangled, revert all uncommitted: `git checkout -- .`
+5. **NEVER leave the project in a non-compiling state** — this is the #1 rule
+6. After reverting, log what happened in `BLOCKED-taskX.md` then continue to next task
+
+#### Quick reference: when to keep going vs. when to stop
+
+| Signal | Meaning | Action |
+|--------|---------|--------|
+| Task is large but code compiles and you're progressing through sub-steps | Normal | **Keep going**, no time limit |
+| Same error after 3 genuinely different fix approaches | Stuck | BLOCKED file → skip sub-step |
+| Test fails after 3 fix attempts | Test stuck | Comment test → continue feature |
+| Build broken, can't fix in 10 min | Critical | Revert → BLOCKED → next task |
+| External API not responding / `go get` fails | Env issue | BLOCKED → next task |
+| Unsure how to implement but haven't tried yet | Not stuck | Try your best approach first |
 
 ### 1.5 — Design system rules (frontend)
 
@@ -136,15 +265,55 @@ If stuck on ANY issue for more than 30 minutes:
 - Keep files small: one file = one responsibility, under 200 lines ideally
 - Imports: always `@/` alias in frontend, never relative `../../`
 
-### 1.7 — Context recovery
+### 1.7 — Per-task validation pipeline
+
+After finishing ALL sub-steps of a task (before commit), run this full pipeline:
+
+```bash
+# Step 1 — Compilation
+cd /home/hassad/Documents/boilerplateSaaS/backend && go build ./...
+cd /home/hassad/Documents/boilerplateSaaS/frontend && npx tsc --noEmit
+
+# Step 2 — Unit tests
+cd /home/hassad/Documents/boilerplateSaaS/backend && go test ./... -v -count=1
+
+# Step 3 — Verify no hardcoded colors (after frontend changes)
+# Search for zinc-, gray-, slate-, white, black in className strings in frontend/src/
+# If found → fix → re-verify
+
+# Step 4 — Verify no cross-feature imports
+# Search frontend/src/features/ for imports from other features
+# If found → fix → re-verify
+```
+
+If ANY step fails → fix → rerun the full pipeline. Only commit when ALL green.
+
+### 1.8 — Skills available
+
+You have access to custom skills. Use them when relevant:
+
+| Skill | When to use | Command |
+|-------|-------------|---------|
+| `/test` | After writing tests, to run and analyze results | `/test auth` or `/test all` |
+| `/check` | After completing a feature, to verify architecture | `/check billing` or `/check` |
+| `/review` | Before committing, to catch security/quality issues | `/review` |
+| `/add-migration` | When creating new migration files | `/add-migration create subscriptions table` |
+
+You don't HAVE to use skills — you can do the same things manually. But skills encode best practices and are more thorough.
+
+### 1.9 — Context recovery
 
 After a context compression, you will lose the conversation history. When that happens:
 
-1. Re-read this file (`TACHES.md`) to know what to do
-2. Check which tasks are already marked `[x]` below
-3. Run `git log --oneline -20` to see what was already committed
-4. Check for any `BLOCKED-*.md` files
-5. Resume from the first unchecked task
+1. Re-read this file (`TACHES.md`) FULLY to recover all rules and task context
+2. Re-read `CLAUDE.md` at project root for architecture rules
+3. Check which tasks are already marked `[x]` below
+4. Run `git log --oneline -20` to see what was already committed
+5. Check for any `BLOCKED-*.md` files at project root
+6. Run `cd backend && go build ./...` and `cd frontend && npx tsc --noEmit` to verify project state
+7. Resume from the first unchecked task
+
+**IMPORTANT**: After context recovery, do NOT re-do work that's already committed. Trust the git log.
 
 ---
 
@@ -157,34 +326,39 @@ Update the checkbox (`[ ]` → `[x]`) in this file after completing each task.
 ### TASK 1: Backend Middleware & Infrastructure
 > Priority: FIRST — this benefits all subsequent features
 
-- [ ] **1a. Structured logging middleware**
+- [x] **1a. Structured logging middleware**
   - Create `backend/internal/handler/middleware/logging.go`
   - Use Go `log/slog` with JSON output
   - Log: method, path, status, duration, request_id (UUID per request)
   - Add request_id to context so all layers can access it
   - Wire in `handler/router.go` as global middleware
 
-- [ ] **1b. Rate limiting middleware**
+- [x] **1b. Rate limiting middleware**
   - Create `backend/internal/handler/middleware/ratelimit.go`
   - Token bucket algorithm per IP address
   - Default: 100 requests/minute for API, 10 requests/minute for auth endpoints
   - Return `429 Too Many Requests` with `Retry-After` header
   - Wire in `handler/router.go` (different limits for different route groups)
 
-- [ ] **1c. Health check endpoint**
+- [x] **1c. Health check endpoint**
   - Add `GET /health` in `handler/router.go`
   - Returns: `{"status":"ok","db":"connected","uptime":"...","version":"1.0.0"}`
   - Ping database to check connection
   - No auth required
 
-- [ ] **1d. Graceful shutdown**
+- [x] **1d. Graceful shutdown**
   - Modify `backend/cmd/api/main.go`
   - Listen for `SIGTERM` and `SIGINT`
   - Drain active connections with timeout (30s)
   - Close database pool
   - Log shutdown sequence
 
-- [ ] **1e. Commit**: `feat: add production middleware (logging, rate-limit, health, graceful shutdown)`
+- [x] **1e. Test & validate**
+  - Run `cd backend && go build ./...` — must compile
+  - Run `cd backend && go test ./... -v -count=1` — must pass
+  - Test health endpoint manually: `curl http://localhost:8081/health` (start server briefly if needed)
+
+- [x] **1f. Commit**: `feat: add production middleware (logging, rate-limit, health, graceful shutdown)`
 
 ---
 
@@ -203,7 +377,8 @@ Update the checkbox (`[ ]` → `[x]`) in this file after completing each task.
   - Create `backend/internal/adapter/resend/client.go` — Resend API client setup
   - Create `backend/internal/adapter/resend/email.go` — implements `service.EmailService`
   - Use `RESEND_API_KEY` from config
-  - From address: `noreply@cleansaas.dev` (or configurable)
+  - From address: `onboarding@resend.dev` (Resend test sender — works immediately, no domain verification needed)
+  - Test recipient for local dev: `hassad.smara69@gmail.com`
   - Go dependency: `go get github.com/resend/resend-go/v2` (run from backend/)
 
 - [ ] **2c. Email templates**
@@ -767,32 +942,64 @@ Update the checkbox (`[ ]` → `[x]`) in this file after completing each task.
   - `app/notification/service_test.go` — send, mark read, get unread count
   - `app/blog/service_test.go` — create post, list published, get by slug
 
-- [ ] **14c. Generate mocks** — Use `mockgen` or manual mocks in `backend/mock/` for all port interfaces
+- [ ] **14c. Generate mocks** — Use manual mocks in `backend/mock/` for all port interfaces (simple struct implementing the interface with function fields). Example:
+  ```go
+  type MockUserRepository struct {
+      CreateFn    func(ctx context.Context, u *user.User) error
+      FindByIDFn  func(ctx context.Context, id string) (*user.User, error)
+      // ... one field per interface method
+  }
+  func (m *MockUserRepository) Create(ctx context.Context, u *user.User) error {
+      return m.CreateFn(ctx, u)
+  }
+  ```
 
-- [ ] **14d. Verify coverage**: `go test ./... -cover` — target 80%+ on domain/ and app/ packages
+- [ ] **14d. Run ALL tests and fix loop**
+  ```bash
+  cd /home/hassad/Documents/boilerplateSaaS/backend && go test ./... -v -count=1
+  ```
+  Apply fix loop (section 1.3) for any failures. All tests must be green.
 
-- [ ] **14e. Commit**: `test: add comprehensive unit tests for all domain entities and app services`
+- [ ] **14e. Verify coverage**: `go test ./... -cover` — target 80%+ on domain/ and app/ packages. Log coverage in commit message.
+
+- [ ] **14f. Commit**: `test: add comprehensive unit tests for all domain entities and app services`
 
 ---
 
 ### TASK 15: Playwright E2E Tests
+> Playwright tests require both backend AND frontend running. Start them before running tests.
 
-- [ ] **15a. Setup Playwright**
+- [ ] **15a. Install & setup Playwright**
   ```bash
   cd /home/hassad/Documents/boilerplateSaaS/frontend
   npm init playwright@latest
+  # When prompted: TypeScript=yes, tests folder=e2e, GitHub Actions=yes, browsers=chromium only (faster)
+  npx playwright install chromium
   ```
-  Configure: `playwright.config.ts` with baseURL `http://localhost:3006`, test dir `e2e/`
+  Configure `playwright.config.ts`:
+  - `baseURL: 'http://localhost:3006'`
+  - `testDir: './e2e'`
+  - `webServer` block to auto-start frontend dev server
+  - `timeout: 30000` per test
 
 - [ ] **15b. Test helpers**
-  - Create `frontend/e2e/helpers.ts` — login helper, API seed helper, common selectors
+  - Create `frontend/e2e/helpers.ts`:
+    - `login(page, email, password)` — fills login form and submits
+    - `register(page, name, email, password)` — fills register form and submits
+    - `API_URL` constant for direct API calls in test setup
 
 - [ ] **15c. Write core E2E tests**
-  - `e2e/auth.spec.ts` — register new user, login, see dashboard, logout
-  - `e2e/settings.spec.ts` — update profile name, change password
-  - `e2e/blog.spec.ts` — visit blog listing, open a post, verify SEO tags
+  - `e2e/auth.spec.ts` — register new user → redirected to dashboard → logout → login again → dashboard
+  - `e2e/settings.spec.ts` — login → go to settings → update name → verify name changed
+  - `e2e/blog.spec.ts` — visit /blog → see post list → click a post → verify title displayed
 
-- [ ] **15d. Commit**: `test: add Playwright E2E tests for auth, settings, and blog flows`
+- [ ] **15d. Run and validate**
+  - Start backend: `cd backend && make run &` (or ensure it's running)
+  - Run Playwright: `cd frontend && npx playwright test --reporter=list`
+  - **Apply fix loop (section 1.3)**: if tests fail, fix → rerun, max 3 attempts per test
+  - All E2E tests must pass before commit
+
+- [ ] **15e. Commit**: `test: add Playwright E2E tests for auth, settings, and blog flows`
 
 ---
 
@@ -877,6 +1084,10 @@ docker compose up -d                      # Start PostgreSQL + DbGate
 - Backend: `http://localhost:8081`
 - Frontend: `http://localhost:3006`
 - DbGate: `http://localhost:8082`
+
+### Test email
+- Resend sender: `onboarding@resend.dev` (test mode, no domain needed)
+- Test recipient: `hassad.smara69@gmail.com`
 
 ### Current migration count
 Check `ls backend/migrations/` — currently at `001_create_users`. Tasks add migrations 002-008.
