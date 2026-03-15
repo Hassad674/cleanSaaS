@@ -15,6 +15,9 @@ import (
 	"github.com/hassad/boilerplateSaaS/backend/internal/port/service"
 )
 
+// Verify interface compliance at compile time.
+var _ service.PaymentService = (*PaymentService)(nil)
+
 type PaymentService struct {
 	webhookSecret string
 }
@@ -56,6 +59,55 @@ func (s *PaymentService) CreateCheckoutSession(_ context.Context, customerID, pr
 	return sess.URL, nil
 }
 
+func (s *PaymentService) CreateCheckoutSessionWithMode(_ context.Context, customerID, priceID, successURL, cancelURL string, mode service.CheckoutMode) (string, error) {
+	stripeMode := string(stripego.CheckoutSessionModeSubscription)
+	if mode == service.CheckoutModePayment {
+		stripeMode = string(stripego.CheckoutSessionModePayment)
+	}
+
+	params := &stripego.CheckoutSessionParams{
+		Customer: stripego.String(customerID),
+		Mode:     stripego.String(stripeMode),
+		LineItems: []*stripego.CheckoutSessionLineItemParams{
+			{
+				Price:    stripego.String(priceID),
+				Quantity: stripego.Int64(1),
+			},
+		},
+		SuccessURL: stripego.String(successURL),
+		CancelURL:  stripego.String(cancelURL),
+	}
+	sess, err := checkout.New(params)
+	if err != nil {
+		return "", fmt.Errorf("creating checkout session with mode: %w", err)
+	}
+	return sess.URL, nil
+}
+
+func (s *PaymentService) CreateGuestCheckoutSession(_ context.Context, priceID, successURL, cancelURL string, mode service.CheckoutMode) (string, error) {
+	stripeMode := string(stripego.CheckoutSessionModeSubscription)
+	if mode == service.CheckoutModePayment {
+		stripeMode = string(stripego.CheckoutSessionModePayment)
+	}
+
+	params := &stripego.CheckoutSessionParams{
+		Mode: stripego.String(stripeMode),
+		LineItems: []*stripego.CheckoutSessionLineItemParams{
+			{
+				Price:    stripego.String(priceID),
+				Quantity: stripego.Int64(1),
+			},
+		},
+		SuccessURL: stripego.String(successURL),
+		CancelURL:  stripego.String(cancelURL),
+	}
+	sess, err := checkout.New(params)
+	if err != nil {
+		return "", fmt.Errorf("creating guest checkout session: %w", err)
+	}
+	return sess.URL, nil
+}
+
 func (s *PaymentService) CreateBillingPortalSession(_ context.Context, customerID, returnURL string) (string, error) {
 	params := &stripego.BillingPortalSessionParams{
 		Customer:  stripego.String(customerID),
@@ -77,6 +129,39 @@ func (s *PaymentService) CancelSubscription(_ context.Context, subscriptionID st
 		return fmt.Errorf("canceling subscription: %w", err)
 	}
 	return nil
+}
+
+func (s *PaymentService) RetrieveCheckoutSession(_ context.Context, sessionID string) (*service.CheckoutSessionInfo, error) {
+	params := &stripego.CheckoutSessionParams{}
+	params.AddExpand("line_items")
+
+	sess, err := checkout.Get(sessionID, params)
+	if err != nil {
+		return nil, fmt.Errorf("retrieving checkout session: %w", err)
+	}
+
+	info := &service.CheckoutSessionInfo{
+		Status:      string(sess.Status),
+		Mode:        string(sess.Mode),
+		AmountTotal: sess.AmountTotal,
+	}
+
+	if sess.Customer != nil {
+		info.CustomerID = sess.Customer.ID
+	}
+	if sess.CustomerEmail != "" {
+		info.CustomerEmail = sess.CustomerEmail
+	} else if sess.CustomerDetails != nil {
+		info.CustomerEmail = sess.CustomerDetails.Email
+	}
+	if sess.Subscription != nil {
+		info.SubscriptionID = sess.Subscription.ID
+	}
+	if sess.LineItems != nil && len(sess.LineItems.Data) > 0 && sess.LineItems.Data[0].Price != nil {
+		info.PriceID = sess.LineItems.Data[0].Price.ID
+	}
+
+	return info, nil
 }
 
 func (s *PaymentService) HandleWebhook(payload []byte, signature string) (*service.PaymentEvent, error) {

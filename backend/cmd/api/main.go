@@ -80,12 +80,14 @@ func main() {
 
 	// AI Chat (optional — only if Gemini key set)
 	var aiSvc *appai.Service
+	var demoAI service.AIService
 	if cfg.GeminiKey != "" {
 		geminiClient, err := adaptgemini.NewClient(context.Background(), cfg.GeminiKey)
 		if err != nil {
 			logger.Error("failed to create Gemini client", slog.String("error", err.Error()))
 		} else {
 			geminiAI := adaptgemini.NewAIService(geminiClient)
+			demoAI = geminiAI // expose for the public demo endpoint
 			conversationRepo := postgres.NewConversationRepository(db)
 			aiSvc = appai.NewService(conversationRepo, geminiAI)
 		}
@@ -120,14 +122,14 @@ func main() {
 	userSvc := appuser.NewService(userRepo)
 
 	// Router
-	router := handler.NewRouter(authSvc, userSvc, billingSvc, storageSvc, aiSvc, notifSvc, blogSvc, referralSvc, teamSvc, wsHub, cfg.JWTSecret, cfg.FrontendURL, db, logger)
+	router := handler.NewRouter(authSvc, userSvc, billingSvc, storageSvc, aiSvc, notifSvc, blogSvc, referralSvc, teamSvc, wsHub, cfg.JWTSecret, cfg.FrontendURL, db, logger, demoAI)
 
 	// HTTP server
 	srv := &http.Server{
 		Addr:         ":" + cfg.Port,
 		Handler:      router,
 		ReadTimeout:  15 * time.Second,
-		WriteTimeout: 15 * time.Second,
+		WriteTimeout: 120 * time.Second, // Increased for SSE streaming endpoints
 		IdleTimeout:  60 * time.Second,
 	}
 

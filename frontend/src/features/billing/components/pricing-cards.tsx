@@ -99,9 +99,14 @@ export function PricingCards() {
                 <span className="text-4xl font-bold text-foreground">
                   {isFree ? "Free" : formatCurrency(plan.price_cents, "usd")}
                 </span>
-                {!isFree && (
+                {!isFree && plan.interval !== "lifetime" && (
                   <span className="text-muted-foreground ml-1">
                     /{plan.interval === "month" ? "mo" : "yr"}
+                  </span>
+                )}
+                {plan.interval === "lifetime" && (
+                  <span className="text-muted-foreground ml-1">
+                    one-time
                   </span>
                 )}
               </div>

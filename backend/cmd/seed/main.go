@@ -24,10 +24,41 @@ func main() {
 	userRepo := postgres.NewUserRepository(db)
 
 	seedAdmin(ctx, userRepo)
+	seedDemoUser(ctx, db)
 	seedPlans(ctx, db)
 	seedBlogPosts(ctx, db)
 
 	fmt.Println("Seed completed.")
+}
+
+// seedDemoUser creates a fixed-UUID user for public demo endpoints (storage demo, etc.).
+// The demo user ID matches the constant in handler/demo_storage.go.
+func seedDemoUser(ctx context.Context, db *sql.DB) {
+	const demoID = "00000000-0000-0000-0000-000000000000"
+
+	var exists bool
+	if err := db.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM users WHERE id = $1)`, demoID).Scan(&exists); err != nil {
+		log.Fatalf("checking demo user: %v", err)
+	}
+	if exists {
+		fmt.Println("Demo user already exists, skipping.")
+		return
+	}
+
+	hashed, err := hash.Password("demo-not-for-login")
+	if err != nil {
+		log.Fatalf("failed to hash demo password: %v", err)
+	}
+
+	_, err = db.ExecContext(ctx,
+		`INSERT INTO users (id, email, name, password_hash, role, email_verified)
+		 VALUES ($1, $2, $3, $4, $5, $6)`,
+		demoID, "demo@cleansaas.dev", "Demo User", hashed, "user", true,
+	)
+	if err != nil {
+		log.Fatalf("inserting demo user: %v", err)
+	}
+	fmt.Println("Demo user created (for storage demo).")
 }
 
 func seedAdmin(ctx context.Context, repo *postgres.UserRepository) {
@@ -67,35 +98,72 @@ type seedPlan struct {
 
 func seedPlans(ctx context.Context, db *sql.DB) {
 	plans := []seedPlan{
+		// Free tier
 		{
 			Name:          "Free",
-			StripePriceID: "price_free_placeholder",
+			StripePriceID: "price_free",
 			PriceCents:    0,
 			Interval:      "month",
 			Features:      []string{"1 project", "Basic analytics", "Community support"},
 			SortOrder:     0,
 		},
+
+		// Pro tier — monthly, yearly, lifetime
 		{
-			Name:          "Pro",
-			StripePriceID: "price_pro_placeholder",
+			Name:          "Pro Monthly",
+			StripePriceID: "price_1TBAnAQbzvg62V9LBd2ajFq8",
 			PriceCents:    1900,
 			Interval:      "month",
 			Features:      []string{"Unlimited projects", "Advanced analytics", "AI chat", "File storage (10GB)", "Priority support"},
 			SortOrder:     1,
 		},
 		{
-			Name:          "Enterprise",
-			StripePriceID: "price_enterprise_placeholder",
+			Name:          "Pro Yearly",
+			StripePriceID: "price_1TBBG3Qbzvg62V9Ls9FjGsup",
+			PriceCents:    19000,
+			Interval:      "year",
+			Features:      []string{"Unlimited projects", "Advanced analytics", "AI chat", "File storage (10GB)", "Priority support"},
+			SortOrder:     2,
+		},
+		{
+			Name:          "Pro Lifetime",
+			StripePriceID: "price_1TBBG3Qbzvg62V9LP99SUY9Y",
+			PriceCents:    49900,
+			Interval:      "lifetime",
+			Features:      []string{"Unlimited projects", "Advanced analytics", "AI chat", "File storage (10GB)", "Priority support", "Lifetime access — pay once"},
+			SortOrder:     3,
+		},
+
+		// Enterprise tier — monthly, yearly, lifetime
+		{
+			Name:          "Enterprise Monthly",
+			StripePriceID: "price_1TBAnAQbzvg62V9L4oUPurRw",
 			PriceCents:    4900,
 			Interval:      "month",
 			Features:      []string{"Everything in Pro", "Unlimited storage", "Custom integrations", "Dedicated support", "SLA guarantee"},
-			SortOrder:     2,
+			SortOrder:     4,
+		},
+		{
+			Name:          "Enterprise Yearly",
+			StripePriceID: "price_1TBBG3Qbzvg62V9L3vzttJzg",
+			PriceCents:    49000,
+			Interval:      "year",
+			Features:      []string{"Everything in Pro", "Unlimited storage", "Custom integrations", "Dedicated support", "SLA guarantee"},
+			SortOrder:     5,
+		},
+		{
+			Name:          "Enterprise Lifetime",
+			StripePriceID: "price_1TBBG4Qbzvg62V9LcTUq6h3I",
+			PriceCents:    99900,
+			Interval:      "lifetime",
+			Features:      []string{"Everything in Pro", "Unlimited storage", "Custom integrations", "Dedicated support", "SLA guarantee", "Lifetime access — pay once"},
+			SortOrder:     6,
 		},
 	}
 
 	for _, p := range plans {
 		var exists bool
-		err := db.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM plans WHERE name = $1)`, p.Name).Scan(&exists)
+		err := db.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM plans WHERE stripe_price_id = $1)`, p.StripePriceID).Scan(&exists)
 		if err != nil {
 			log.Fatalf("checking plan existence: %v", err)
 		}
@@ -112,7 +180,7 @@ func seedPlans(ctx context.Context, db *sql.DB) {
 		if err != nil {
 			log.Fatalf("inserting plan '%s': %v", p.Name, err)
 		}
-		fmt.Printf("Plan '%s' created ($%d/mo)\n", p.Name, p.PriceCents/100)
+		fmt.Printf("Plan '%s' created (%s, $%d)\n", p.Name, p.Interval, p.PriceCents/100)
 	}
 }
 

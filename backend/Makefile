@@ -1,7 +1,7 @@
 .PHONY: run build test migrate-up migrate-down migrate-down-all migrate-status migrate-force seed mock lint tidy
 
 run:
-	go run cmd/api/main.go
+	set -a && [ -f .env ] && . ./.env; set +a; go run cmd/api/main.go
 
 build:
 	go build -o bin/api cmd/api/main.go

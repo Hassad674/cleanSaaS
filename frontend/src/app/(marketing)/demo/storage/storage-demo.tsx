@@ -1,8 +1,14 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { cn } from "@/shared/lib/utils";
+
+// ---------------------------------------------------------------------------
+// API
+// ---------------------------------------------------------------------------
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8081";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -10,12 +16,14 @@ import { cn } from "@/shared/lib/utils";
 
 type FileType = "pdf" | "image" | "spreadsheet" | "video" | "text" | "other";
 
-interface MockFile {
+interface StoredFile {
   id: string;
   name: string;
-  size: number;
-  type: FileType;
-  uploadedAt: Date;
+  size_bytes: number;
+  content_type: string;
+  url: string;
+  created_at: string;
+  updated_at: string;
 }
 
 interface UploadingFile {
@@ -24,6 +32,7 @@ interface UploadingFile {
   size: number;
   type: FileType;
   progress: number;
+  error?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -42,7 +51,8 @@ function formatFileSize(bytes: number): string {
   return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
 }
 
-function formatRelativeTime(date: Date): string {
+function formatRelativeTime(dateStr: string): string {
+  const date = new Date(dateStr);
   const now = new Date();
   const diffMs = now.getTime() - date.getTime();
   const diffMin = Math.floor(diffMs / 60_000);
@@ -59,7 +69,26 @@ function formatRelativeTime(date: Date): string {
   return `${diffMonths}mo ago`;
 }
 
-function inferFileType(fileName: string): FileType {
+function inferFileType(contentType: string): FileType {
+  if (contentType === "application/pdf") return "pdf";
+  if (contentType.startsWith("image/")) return "image";
+  if (
+    contentType.includes("spreadsheet") ||
+    contentType.includes("excel") ||
+    contentType === "text/csv"
+  )
+    return "spreadsheet";
+  if (contentType.startsWith("video/")) return "video";
+  if (
+    contentType.startsWith("text/") ||
+    contentType === "application/msword" ||
+    contentType.includes("document")
+  )
+    return "text";
+  return "other";
+}
+
+function inferFileTypeFromName(fileName: string): FileType {
   const ext = fileName.split(".").pop()?.toLowerCase() ?? "";
   if (["pdf"].includes(ext)) return "pdf";
   if (["png", "jpg", "jpeg", "gif", "svg", "webp"].includes(ext))
@@ -215,123 +244,163 @@ function fileTypeColor(type: FileType): string {
 }
 
 // ---------------------------------------------------------------------------
-// Mock data
+// API helpers
 // ---------------------------------------------------------------------------
 
-const now = new Date();
-
-function daysAgo(days: number): Date {
-  return new Date(now.getTime() - days * 86_400_000);
+async function fetchFiles(
+  page: number,
+  limit: number
+): Promise<{
+  files: StoredFile[];
+  total: number;
+  page: number;
+  limit: number;
+}> {
+  const res = await fetch(
+    `${API_URL}/demo/storage/files?page=${page}&limit=${limit}`
+  );
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error || "Failed to fetch files");
+  }
+  return res.json();
 }
 
-const INITIAL_FILES: MockFile[] = [
-  {
-    id: "f1",
-    name: "presentation.pdf",
-    size: 2_516_582,
-    type: "pdf",
-    uploadedAt: daysAgo(2),
-  },
-  {
-    id: "f2",
-    name: "screenshot.png",
-    size: 867_328,
-    type: "image",
-    uploadedAt: daysAgo(5),
-  },
-  {
-    id: "f3",
-    name: "report.xlsx",
-    size: 1_153_434,
-    type: "spreadsheet",
-    uploadedAt: daysAgo(7),
-  },
-  {
-    id: "f4",
-    name: "avatar.jpg",
-    size: 126_976,
-    type: "image",
-    uploadedAt: daysAgo(14),
-  },
-  {
-    id: "f5",
-    name: "notes.txt",
-    size: 12_288,
-    type: "text",
-    uploadedAt: daysAgo(21),
-  },
-  {
-    id: "f6",
-    name: "demo-video.mp4",
-    size: 47_395_635,
-    type: "video",
-    uploadedAt: daysAgo(30),
-  },
-];
+function uploadFile(
+  file: File,
+  onProgress: (progress: number) => void
+): Promise<StoredFile> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", `${API_URL}/demo/storage/upload`);
 
-const TOTAL_STORAGE = 10 * 1024 * 1024 * 1024; // 10 GB
-const USED_STORAGE = 2.3 * 1024 * 1024 * 1024; // 2.3 GB
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable) {
+        const progress = Math.round((e.loaded / e.total) * 100);
+        onProgress(progress);
+      }
+    };
+
+    xhr.onload = () => {
+      if (xhr.status === 201) {
+        try {
+          resolve(JSON.parse(xhr.responseText));
+        } catch {
+          reject(new Error("Invalid response from server"));
+        }
+      } else {
+        try {
+          const body = JSON.parse(xhr.responseText);
+          reject(new Error(body.error || `Upload failed (${xhr.status})`));
+        } catch {
+          reject(new Error(`Upload failed (${xhr.status})`));
+        }
+      }
+    };
+
+    xhr.onerror = () => reject(new Error("Network error during upload"));
+
+    const formData = new FormData();
+    formData.append("file", file);
+    xhr.send(formData);
+  });
+}
+
+async function deleteFile(fileID: string): Promise<void> {
+  const res = await fetch(`${API_URL}/demo/storage/files/${fileID}`, {
+    method: "DELETE",
+  });
+  if (!res.ok && res.status !== 204) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error || "Failed to delete file");
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Main component
 // ---------------------------------------------------------------------------
 
 export function StorageDemo() {
-  const [files, setFiles] = useState<MockFile[]>(INITIAL_FILES);
+  const [files, setFiles] = useState<StoredFile[]>([]);
+  const [total, setTotal] = useState(0);
   const [uploading, setUploading] = useState<UploadingFile[]>([]);
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const [isDragOver, setIsDragOver] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [deletingIds, setDeletingIds] = useState<Set<string>>(new Set());
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // -------------------------------------------------------------------------
-  // Upload simulation
+  // Load files on mount
   // -------------------------------------------------------------------------
 
-  const simulateUpload = useCallback(
-    (fileList: { name: string; size: number }[]) => {
+  const loadFiles = useCallback(async () => {
+    try {
+      setError(null);
+      const data = await fetchFiles(1, 50);
+      setFiles(data.files || []);
+      setTotal(data.total);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load files");
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadFiles();
+  }, [loadFiles]);
+
+  // -------------------------------------------------------------------------
+  // Upload
+  // -------------------------------------------------------------------------
+
+  const handleUpload = useCallback(
+    async (fileList: File[]) => {
       const newUploads: UploadingFile[] = fileList.map((f) => ({
         id: generateId(),
         name: f.name,
         size: f.size,
-        type: inferFileType(f.name),
+        type: inferFileTypeFromName(f.name),
         progress: 0,
       }));
 
       setUploading((prev) => [...prev, ...newUploads]);
 
-      newUploads.forEach((upload) => {
-        const steps = 20;
-        const interval = 2000 / steps;
-        let step = 0;
+      for (let i = 0; i < fileList.length; i++) {
+        const file = fileList[i];
+        const uploadEntry = newUploads[i];
 
-        const timer = setInterval(() => {
-          step++;
-          const progress = Math.min(100, Math.round((step / steps) * 100));
+        try {
+          const result = await uploadFile(file, (progress) => {
+            setUploading((prev) =>
+              prev.map((u) =>
+                u.id === uploadEntry.id ? { ...u, progress } : u
+              )
+            );
+          });
 
+          // Remove from uploading and add to files
+          setUploading((prev) => prev.filter((u) => u.id !== uploadEntry.id));
+          setFiles((prev) => [result, ...prev]);
+          setTotal((prev) => prev + 1);
+        } catch (err) {
+          // Show error on the upload entry briefly, then remove
+          const errorMsg =
+            err instanceof Error ? err.message : "Upload failed";
           setUploading((prev) =>
-            prev.map((u) => (u.id === upload.id ? { ...u, progress } : u))
+            prev.map((u) =>
+              u.id === uploadEntry.id ? { ...u, error: errorMsg } : u
+            )
           );
-
-          if (step >= steps) {
-            clearInterval(timer);
-
-            // Move from uploading to files
-            setTimeout(() => {
-              setUploading((prev) => prev.filter((u) => u.id !== upload.id));
-              setFiles((prev) => [
-                {
-                  id: upload.id,
-                  name: upload.name,
-                  size: upload.size,
-                  type: upload.type,
-                  uploadedAt: new Date(),
-                },
-                ...prev,
-              ]);
-            }, 300);
-          }
-        }, interval);
-      });
+          setTimeout(() => {
+            setUploading((prev) =>
+              prev.filter((u) => u.id !== uploadEntry.id)
+            );
+          }, 3000);
+        }
+      }
     },
     []
   );
@@ -341,16 +410,12 @@ export function StorageDemo() {
       e.preventDefault();
       setIsDragOver(false);
 
-      const droppedFiles = Array.from(e.dataTransfer.files).map((f) => ({
-        name: f.name,
-        size: f.size,
-      }));
-
+      const droppedFiles = Array.from(e.dataTransfer.files);
       if (droppedFiles.length > 0) {
-        simulateUpload(droppedFiles);
+        handleUpload(droppedFiles);
       }
     },
-    [simulateUpload]
+    [handleUpload]
   );
 
   const handleFileSelect = useCallback(
@@ -358,19 +423,15 @@ export function StorageDemo() {
       const selected = e.target.files;
       if (!selected) return;
 
-      const fileList = Array.from(selected).map((f) => ({
-        name: f.name,
-        size: f.size,
-      }));
-
+      const fileList = Array.from(selected);
       if (fileList.length > 0) {
-        simulateUpload(fileList);
+        handleUpload(fileList);
       }
 
       // Reset input so the same file can be selected again
       e.target.value = "";
     },
-    [simulateUpload]
+    [handleUpload]
   );
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
@@ -383,20 +444,45 @@ export function StorageDemo() {
     setIsDragOver(false);
   }, []);
 
-  const handleDelete = useCallback((id: string) => {
-    setFiles((prev) => prev.filter((f) => f.id !== id));
+  const handleDelete = useCallback(async (id: string) => {
+    setDeletingIds((prev) => new Set(prev).add(id));
+    try {
+      await deleteFile(id);
+      setFiles((prev) => prev.filter((f) => f.id !== id));
+      setTotal((prev) => Math.max(0, prev - 1));
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Failed to delete file"
+      );
+    } finally {
+      setDeletingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+    }
   }, []);
 
-  const handleDownload = useCallback((fileName: string) => {
-    // Simulated download — just show an alert in demo mode
-    alert(`Download simulated for "${fileName}"`);
+  const handleDownload = useCallback((url: string, fileName: string) => {
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = fileName;
+    link.target = "_blank";
+    link.rel = "noopener noreferrer";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   }, []);
+
+  // -------------------------------------------------------------------------
+  // Computed
+  // -------------------------------------------------------------------------
+
+  const totalBytes = files.reduce((acc, f) => acc + f.size_bytes, 0);
 
   // -------------------------------------------------------------------------
   // Render
   // -------------------------------------------------------------------------
-
-  const usedPercent = (USED_STORAGE / TOTAL_STORAGE) * 100;
 
   return (
     <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-12 max-w-5xl">
@@ -430,30 +516,52 @@ export function StorageDemo() {
           File Storage Demo
         </h1>
         <p className="text-muted-foreground mt-2 max-w-2xl">
-          Upload, manage, and preview files with Cloudflare R2. This demo runs
-          entirely in your browser with simulated data.
+          Upload, manage, and preview files with Cloudflare R2. Files are
+          stored on a real R2 bucket via the Go backend. Max 10MB per file.
         </p>
       </div>
 
-      {/* Storage usage bar */}
+      {/* Error banner */}
+      {error && (
+        <div className="bg-destructive/10 border border-destructive/30 text-destructive rounded-xl p-4 mb-6 flex items-center justify-between">
+          <p className="text-sm">{error}</p>
+          <button
+            type="button"
+            onClick={() => setError(null)}
+            className="text-destructive hover:text-destructive/80 transition-colors ml-4"
+            aria-label="Dismiss error"
+          >
+            <svg
+              className="h-4 w-4"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              strokeWidth={2}
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M6 18L18 6M6 6l12 12"
+              />
+            </svg>
+          </button>
+        </div>
+      )}
+
+      {/* Storage usage summary */}
       <div className="bg-card border border-border rounded-xl p-4 sm:p-6 mb-6">
         <div className="flex items-center justify-between mb-2">
           <h2 className="text-sm font-medium text-foreground">
-            Storage Usage
+            Demo Storage
           </h2>
           <span className="text-sm text-muted-foreground">
-            {formatFileSize(USED_STORAGE)} of {formatFileSize(TOTAL_STORAGE)}{" "}
-            used
+            {formatFileSize(totalBytes)} across {total}{" "}
+            {total === 1 ? "file" : "files"}
           </span>
         </div>
-        <div className="h-2.5 bg-muted rounded-full overflow-hidden">
-          <div
-            className="h-full bg-primary rounded-full transition-all duration-500"
-            style={{ width: `${usedPercent}%` }}
-          />
-        </div>
-        <p className="text-xs text-muted-foreground mt-1.5">
-          {usedPercent.toFixed(0)}% of your storage is in use
+        <p className="text-xs text-muted-foreground">
+          Files are stored in Cloudflare R2. Demo files use a shared demo
+          account.
         </p>
       </div>
 
@@ -508,7 +616,7 @@ export function StorageDemo() {
                 : "Drag and drop files here"}
             </p>
             <p className="text-xs text-muted-foreground mt-1">
-              or use the button below to browse
+              or use the button below to browse (max 10MB per file)
             </p>
           </div>
           <button
@@ -540,339 +648,446 @@ export function StorageDemo() {
           {uploading.map((file) => (
             <div
               key={file.id}
-              className="bg-card border border-border rounded-xl p-4 flex items-center gap-4"
+              className={cn(
+                "bg-card border rounded-xl p-4 flex items-center gap-4",
+                file.error ? "border-destructive/50" : "border-border"
+              )}
             >
               <div
                 className={cn(
                   "h-10 w-10 rounded-lg bg-muted flex items-center justify-center",
-                  fileTypeColor(file.type)
+                  file.error
+                    ? "text-destructive"
+                    : fileTypeColor(file.type)
                 )}
               >
-                <FileTypeIcon type={file.type} className="h-5 w-5" />
+                {file.error ? (
+                  <svg
+                    className="h-5 w-5"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                    strokeWidth={1.5}
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z"
+                    />
+                  </svg>
+                ) : (
+                  <FileTypeIcon type={file.type} className="h-5 w-5" />
+                )}
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium text-foreground truncate">
                   {file.name}
                 </p>
-                <div className="flex items-center gap-3 mt-1.5">
-                  <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
-                    <div
-                      className="h-full bg-primary rounded-full transition-all duration-100"
-                      style={{ width: `${file.progress}%` }}
-                    />
+                {file.error ? (
+                  <p className="text-xs text-destructive mt-1">
+                    {file.error}
+                  </p>
+                ) : (
+                  <div className="flex items-center gap-3 mt-1.5">
+                    <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-primary rounded-full transition-all duration-100"
+                        style={{ width: `${file.progress}%` }}
+                      />
+                    </div>
+                    <span className="text-xs text-muted-foreground tabular-nums w-8 text-right">
+                      {file.progress}%
+                    </span>
                   </div>
-                  <span className="text-xs text-muted-foreground tabular-nums w-8 text-right">
-                    {file.progress}%
-                  </span>
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* Toolbar: view toggle + file count */}
-      <div className="flex items-center justify-between mb-4">
-        <p className="text-sm text-muted-foreground">
-          {files.length} {files.length === 1 ? "file" : "files"}
-        </p>
-        <div className="flex items-center gap-1 bg-muted rounded-lg p-0.5">
-          <button
-            type="button"
-            onClick={() => setViewMode("grid")}
-            className={cn(
-              "p-1.5 rounded-md transition-colors",
-              viewMode === "grid"
-                ? "bg-card text-foreground shadow-sm"
-                : "text-muted-foreground hover:text-foreground"
-            )}
-            aria-label="Grid view"
-          >
-            <svg
-              className="h-4 w-4"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-              strokeWidth={2}
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M3.75 6A2.25 2.25 0 016 3.75h2.25A2.25 2.25 0 0110.5 6v2.25a2.25 2.25 0 01-2.25 2.25H6a2.25 2.25 0 01-2.25-2.25V6zM3.75 15.75A2.25 2.25 0 016 13.5h2.25a2.25 2.25 0 012.25 2.25V18a2.25 2.25 0 01-2.25 2.25H6A2.25 2.25 0 013.75 18v-2.25zM13.5 6a2.25 2.25 0 012.25-2.25H18A2.25 2.25 0 0120.25 6v2.25A2.25 2.25 0 0118 10.5h-2.25a2.25 2.25 0 01-2.25-2.25V6zM13.5 15.75a2.25 2.25 0 012.25-2.25H18a2.25 2.25 0 012.25 2.25V18A2.25 2.25 0 0118 20.25h-2.25A2.25 2.25 0 0113.5 18v-2.25z"
-              />
-            </svg>
-          </button>
-          <button
-            type="button"
-            onClick={() => setViewMode("list")}
-            className={cn(
-              "p-1.5 rounded-md transition-colors",
-              viewMode === "list"
-                ? "bg-card text-foreground shadow-sm"
-                : "text-muted-foreground hover:text-foreground"
-            )}
-            aria-label="List view"
-          >
-            <svg
-              className="h-4 w-4"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-              strokeWidth={2}
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M3.75 12h16.5m-16.5 3.75h16.5M3.75 19.5h16.5M5.625 4.5h12.75a1.875 1.875 0 010 3.75H5.625a1.875 1.875 0 010-3.75z"
-              />
-            </svg>
-          </button>
-        </div>
-      </div>
-
-      {/* File grid */}
-      {viewMode === "grid" && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {files.map((file) => (
-            <div
-              key={file.id}
-              className="bg-card border border-border rounded-xl p-4 group hover:shadow-md hover:border-primary/30 transition-all duration-200"
-            >
-              {/* Icon + badges */}
-              <div className="flex items-start justify-between mb-3">
-                <div
-                  className={cn(
-                    "h-10 w-10 rounded-lg bg-muted flex items-center justify-center",
-                    fileTypeColor(file.type)
-                  )}
-                >
-                  <FileTypeIcon type={file.type} className="h-5 w-5" />
-                </div>
-                {file.type === "image" && (
-                  <span className="text-xs bg-primary/10 text-primary font-medium px-2 py-0.5 rounded-md">
-                    Preview
-                  </span>
                 )}
               </div>
-
-              {/* File info */}
-              <p className="text-sm font-medium text-foreground truncate">
-                {file.name}
-              </p>
-              <div className="flex items-center gap-2 mt-1">
-                <span className="text-xs text-muted-foreground">
-                  {formatFileSize(file.size)}
-                </span>
-                <span className="text-muted-foreground/40">·</span>
-                <span className="text-xs text-muted-foreground">
-                  {formatRelativeTime(file.uploadedAt)}
-                </span>
-              </div>
-
-              {/* Actions */}
-              <div className="flex items-center gap-2 mt-3 pt-3 border-t border-border">
-                <button
-                  type="button"
-                  onClick={() => handleDownload(file.name)}
-                  className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
-                >
-                  <svg
-                    className="h-3.5 w-3.5"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                    strokeWidth={2}
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3"
-                    />
-                  </svg>
-                  Download
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleDelete(file.id)}
-                  className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-destructive transition-colors ml-auto"
-                >
-                  <svg
-                    className="h-3.5 w-3.5"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                    strokeWidth={2}
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0"
-                    />
-                  </svg>
-                  Delete
-                </button>
-              </div>
             </div>
           ))}
         </div>
       )}
 
-      {/* File list (table) */}
-      {viewMode === "list" && (
-        <div className="bg-card border border-border rounded-xl overflow-hidden">
-          <table className="w-full">
-            <thead>
-              <tr className="border-b border-border">
-                <th className="text-left text-xs font-medium text-muted-foreground px-4 py-3">
-                  Name
-                </th>
-                <th className="text-left text-xs font-medium text-muted-foreground px-4 py-3 hidden sm:table-cell">
-                  Size
-                </th>
-                <th className="text-left text-xs font-medium text-muted-foreground px-4 py-3 hidden md:table-cell">
-                  Uploaded
-                </th>
-                <th className="text-right text-xs font-medium text-muted-foreground px-4 py-3">
-                  Actions
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {files.map((file, index) => (
-                <tr
-                  key={file.id}
-                  className={cn(
-                    "hover:bg-muted/50 transition-colors",
-                    index !== files.length - 1 && "border-b border-border"
-                  )}
-                >
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-3">
-                      <div
-                        className={cn(
-                          "h-8 w-8 rounded-lg bg-muted flex items-center justify-center shrink-0",
-                          fileTypeColor(file.type)
-                        )}
-                      >
-                        <FileTypeIcon
-                          type={file.type}
-                          className="h-4 w-4"
-                        />
-                      </div>
-                      <div className="min-w-0">
-                        <p className="text-sm font-medium text-foreground truncate">
-                          {file.name}
-                        </p>
-                        <div className="flex items-center gap-2 sm:hidden">
-                          <span className="text-xs text-muted-foreground">
-                            {formatFileSize(file.size)}
-                          </span>
-                          {file.type === "image" && (
-                            <span className="text-xs bg-primary/10 text-primary font-medium px-1.5 py-0.5 rounded">
-                              Preview
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                      {file.type === "image" && (
-                        <span className="hidden sm:inline-block text-xs bg-primary/10 text-primary font-medium px-2 py-0.5 rounded-md">
-                          Preview
-                        </span>
-                      )}
-                    </div>
-                  </td>
-                  <td className="px-4 py-3 hidden sm:table-cell">
-                    <span className="text-sm text-muted-foreground">
-                      {formatFileSize(file.size)}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 hidden md:table-cell">
-                    <span className="text-sm text-muted-foreground">
-                      {formatRelativeTime(file.uploadedAt)}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3">
-                    <div className="flex items-center justify-end gap-1">
-                      <button
-                        type="button"
-                        onClick={() => handleDownload(file.name)}
-                        className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
-                        aria-label={`Download ${file.name}`}
-                      >
-                        <svg
-                          className="h-4 w-4"
-                          fill="none"
-                          viewBox="0 0 24 24"
-                          stroke="currentColor"
-                          strokeWidth={2}
-                        >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3"
-                          />
-                        </svg>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleDelete(file.id)}
-                        className="p-1.5 rounded-md text-muted-foreground hover:text-destructive hover:bg-muted transition-colors"
-                        aria-label={`Delete ${file.name}`}
-                      >
-                        <svg
-                          className="h-4 w-4"
-                          fill="none"
-                          viewBox="0 0 24 24"
-                          stroke="currentColor"
-                          strokeWidth={2}
-                        >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0"
-                          />
-                        </svg>
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+      {/* Loading state */}
+      {isLoading && (
+        <div className="text-center py-16">
+          <div className="h-8 w-8 border-2 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+          <p className="text-sm text-muted-foreground">Loading files...</p>
         </div>
       )}
 
-      {/* Empty state */}
-      {files.length === 0 && uploading.length === 0 && (
-        <div className="text-center py-16">
-          <div className="h-12 w-12 rounded-lg bg-muted text-muted-foreground flex items-center justify-center mx-auto mb-4">
-            <svg
-              className="h-6 w-6"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-              strokeWidth={1.5}
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M2.25 12.75V12A2.25 2.25 0 014.5 9.75h15A2.25 2.25 0 0121.75 12v.75m-8.69-6.44l-2.12-2.12a1.5 1.5 0 00-1.061-.44H4.5A2.25 2.25 0 002.25 6v12a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9a2.25 2.25 0 00-2.25-2.25h-5.379a1.5 1.5 0 01-1.06-.44z"
-              />
-            </svg>
+      {/* Files section (only show when not loading) */}
+      {!isLoading && (
+        <>
+          {/* Toolbar: view toggle + file count */}
+          <div className="flex items-center justify-between mb-4">
+            <p className="text-sm text-muted-foreground">
+              {files.length} {files.length === 1 ? "file" : "files"}
+            </p>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={loadFiles}
+                className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                aria-label="Refresh files"
+              >
+                <svg
+                  className="h-4 w-4"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  strokeWidth={2}
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182M2.985 19.644l3.181-3.182"
+                  />
+                </svg>
+              </button>
+              <div className="flex items-center gap-1 bg-muted rounded-lg p-0.5">
+                <button
+                  type="button"
+                  onClick={() => setViewMode("grid")}
+                  className={cn(
+                    "p-1.5 rounded-md transition-colors",
+                    viewMode === "grid"
+                      ? "bg-card text-foreground shadow-sm"
+                      : "text-muted-foreground hover:text-foreground"
+                  )}
+                  aria-label="Grid view"
+                >
+                  <svg
+                    className="h-4 w-4"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                    strokeWidth={2}
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="M3.75 6A2.25 2.25 0 016 3.75h2.25A2.25 2.25 0 0110.5 6v2.25a2.25 2.25 0 01-2.25 2.25H6a2.25 2.25 0 01-2.25-2.25V6zM3.75 15.75A2.25 2.25 0 016 13.5h2.25a2.25 2.25 0 012.25 2.25V18a2.25 2.25 0 01-2.25 2.25H6A2.25 2.25 0 013.75 18v-2.25zM13.5 6a2.25 2.25 0 012.25-2.25H18A2.25 2.25 0 0120.25 6v2.25A2.25 2.25 0 0118 10.5h-2.25a2.25 2.25 0 01-2.25-2.25V6zM13.5 15.75a2.25 2.25 0 012.25-2.25H18a2.25 2.25 0 012.25 2.25V18A2.25 2.25 0 0118 20.25h-2.25A2.25 2.25 0 0113.5 18v-2.25z"
+                    />
+                  </svg>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setViewMode("list")}
+                  className={cn(
+                    "p-1.5 rounded-md transition-colors",
+                    viewMode === "list"
+                      ? "bg-card text-foreground shadow-sm"
+                      : "text-muted-foreground hover:text-foreground"
+                  )}
+                  aria-label="List view"
+                >
+                  <svg
+                    className="h-4 w-4"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                    strokeWidth={2}
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="M3.75 12h16.5m-16.5 3.75h16.5M3.75 19.5h16.5M5.625 4.5h12.75a1.875 1.875 0 010 3.75H5.625a1.875 1.875 0 010-3.75z"
+                    />
+                  </svg>
+                </button>
+              </div>
+            </div>
           </div>
-          <p className="text-sm font-medium text-foreground">
-            No files uploaded
-          </p>
-          <p className="text-xs text-muted-foreground mt-1">
-            Drop files above or click &quot;Browse files&quot; to get started.
-          </p>
-        </div>
+
+          {/* File grid */}
+          {viewMode === "grid" && files.length > 0 && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {files.map((file) => {
+                const fType = inferFileType(file.content_type);
+                const isImage = file.content_type.startsWith("image/");
+                const isDeleting = deletingIds.has(file.id);
+
+                return (
+                  <div
+                    key={file.id}
+                    className={cn(
+                      "bg-card border border-border rounded-xl overflow-hidden group hover:shadow-md hover:border-primary/30 transition-all duration-200",
+                      isDeleting && "opacity-50 pointer-events-none"
+                    )}
+                  >
+                    {/* Image thumbnail */}
+                    {isImage && (
+                      <div className="relative h-36 bg-muted overflow-hidden">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={file.url}
+                          alt={file.name}
+                          className="w-full h-full object-cover"
+                          loading="lazy"
+                        />
+                      </div>
+                    )}
+
+                    <div className="p-4">
+                      {/* Icon + badges (only for non-images) */}
+                      {!isImage && (
+                        <div className="flex items-start justify-between mb-3">
+                          <div
+                            className={cn(
+                              "h-10 w-10 rounded-lg bg-muted flex items-center justify-center",
+                              fileTypeColor(fType)
+                            )}
+                          >
+                            <FileTypeIcon
+                              type={fType}
+                              className="h-5 w-5"
+                            />
+                          </div>
+                        </div>
+                      )}
+
+                      {/* File info */}
+                      <p className="text-sm font-medium text-foreground truncate">
+                        {file.name}
+                      </p>
+                      <div className="flex items-center gap-2 mt-1">
+                        <span className="text-xs text-muted-foreground">
+                          {formatFileSize(file.size_bytes)}
+                        </span>
+                        <span className="text-muted-foreground/40">
+                          ·
+                        </span>
+                        <span className="text-xs text-muted-foreground">
+                          {formatRelativeTime(file.created_at)}
+                        </span>
+                      </div>
+
+                      {/* Actions */}
+                      <div className="flex items-center gap-2 mt-3 pt-3 border-t border-border">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            handleDownload(file.url, file.name)
+                          }
+                          className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                        >
+                          <svg
+                            className="h-3.5 w-3.5"
+                            fill="none"
+                            viewBox="0 0 24 24"
+                            stroke="currentColor"
+                            strokeWidth={2}
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3"
+                            />
+                          </svg>
+                          Download
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDelete(file.id)}
+                          disabled={isDeleting}
+                          className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-destructive transition-colors ml-auto disabled:opacity-50"
+                        >
+                          <svg
+                            className="h-3.5 w-3.5"
+                            fill="none"
+                            viewBox="0 0 24 24"
+                            stroke="currentColor"
+                            strokeWidth={2}
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0"
+                            />
+                          </svg>
+                          Delete
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* File list (table) */}
+          {viewMode === "list" && files.length > 0 && (
+            <div className="bg-card border border-border rounded-xl overflow-hidden">
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b border-border">
+                    <th className="text-left text-xs font-medium text-muted-foreground px-4 py-3">
+                      Name
+                    </th>
+                    <th className="text-left text-xs font-medium text-muted-foreground px-4 py-3 hidden sm:table-cell">
+                      Size
+                    </th>
+                    <th className="text-left text-xs font-medium text-muted-foreground px-4 py-3 hidden md:table-cell">
+                      Uploaded
+                    </th>
+                    <th className="text-right text-xs font-medium text-muted-foreground px-4 py-3">
+                      Actions
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {files.map((file, index) => {
+                    const fType = inferFileType(file.content_type);
+                    const isImage =
+                      file.content_type.startsWith("image/");
+                    const isDeleting = deletingIds.has(file.id);
+
+                    return (
+                      <tr
+                        key={file.id}
+                        className={cn(
+                          "hover:bg-muted/50 transition-colors",
+                          index !== files.length - 1 &&
+                            "border-b border-border",
+                          isDeleting && "opacity-50 pointer-events-none"
+                        )}
+                      >
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-3">
+                            {isImage ? (
+                              <div className="h-8 w-8 rounded-lg bg-muted overflow-hidden shrink-0">
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img
+                                  src={file.url}
+                                  alt={file.name}
+                                  className="h-full w-full object-cover"
+                                  loading="lazy"
+                                />
+                              </div>
+                            ) : (
+                              <div
+                                className={cn(
+                                  "h-8 w-8 rounded-lg bg-muted flex items-center justify-center shrink-0",
+                                  fileTypeColor(fType)
+                                )}
+                              >
+                                <FileTypeIcon
+                                  type={fType}
+                                  className="h-4 w-4"
+                                />
+                              </div>
+                            )}
+                            <div className="min-w-0">
+                              <p className="text-sm font-medium text-foreground truncate">
+                                {file.name}
+                              </p>
+                              <div className="flex items-center gap-2 sm:hidden">
+                                <span className="text-xs text-muted-foreground">
+                                  {formatFileSize(file.size_bytes)}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 hidden sm:table-cell">
+                          <span className="text-sm text-muted-foreground">
+                            {formatFileSize(file.size_bytes)}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 hidden md:table-cell">
+                          <span className="text-sm text-muted-foreground">
+                            {formatRelativeTime(file.created_at)}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="flex items-center justify-end gap-1">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                handleDownload(file.url, file.name)
+                              }
+                              className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                              aria-label={`Download ${file.name}`}
+                            >
+                              <svg
+                                className="h-4 w-4"
+                                fill="none"
+                                viewBox="0 0 24 24"
+                                stroke="currentColor"
+                                strokeWidth={2}
+                              >
+                                <path
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3"
+                                />
+                              </svg>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDelete(file.id)}
+                              disabled={isDeleting}
+                              className="p-1.5 rounded-md text-muted-foreground hover:text-destructive hover:bg-muted transition-colors disabled:opacity-50"
+                              aria-label={`Delete ${file.name}`}
+                            >
+                              <svg
+                                className="h-4 w-4"
+                                fill="none"
+                                viewBox="0 0 24 24"
+                                stroke="currentColor"
+                                strokeWidth={2}
+                              >
+                                <path
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0"
+                                />
+                              </svg>
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {/* Empty state */}
+          {files.length === 0 && uploading.length === 0 && (
+            <div className="text-center py-16">
+              <div className="h-12 w-12 rounded-lg bg-muted text-muted-foreground flex items-center justify-center mx-auto mb-4">
+                <svg
+                  className="h-6 w-6"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  strokeWidth={1.5}
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M2.25 12.75V12A2.25 2.25 0 014.5 9.75h15A2.25 2.25 0 0121.75 12v.75m-8.69-6.44l-2.12-2.12a1.5 1.5 0 00-1.061-.44H4.5A2.25 2.25 0 002.25 6v12a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9a2.25 2.25 0 00-2.25-2.25h-5.379a1.5 1.5 0 01-1.06-.44z"
+                  />
+                </svg>
+              </div>
+              <p className="text-sm font-medium text-foreground">
+                No files uploaded yet
+              </p>
+              <p className="text-xs text-muted-foreground mt-1">
+                Drop files above or click &quot;Browse files&quot; to get
+                started.
+              </p>
+            </div>
+          )}
+        </>
       )}
 
       {/* Footer note */}
       <p className="text-center text-sm text-muted-foreground mt-10">
-        This demo runs entirely in your browser. In production, files are stored
-        in Cloudflare R2 via the Go backend.
+        This demo uploads real files to Cloudflare R2 via the Go backend.
+        Demo files are shared across all visitors and may be cleaned up
+        periodically.
       </p>
     </div>
   );

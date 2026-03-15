@@ -21,85 +21,25 @@ interface Conversation {
 }
 
 // ---------------------------------------------------------------------------
-// Mock data
+// API
+// ---------------------------------------------------------------------------
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8081";
+
+// ---------------------------------------------------------------------------
+// Helpers
 // ---------------------------------------------------------------------------
 
 function uid(): string {
   return Math.random().toString(36).slice(2, 10);
 }
 
-const AI_RESPONSES = [
-  "Great question! In CleanSaaS, every feature is fully independent and removable. The AI module uses a port/adapter pattern so you can swap between OpenAI, Gemini, or Claude with a single config change. No code modifications needed.",
-  "Here is a quick example. To switch from OpenAI to Claude, you only need to change the provider in your environment config:\n\n```\nAI_PROVIDER=claude\nCLAUDE_API_KEY=sk-...\n```\n\nThe backend adapter handles the rest automatically.",
-  "Sure, I can help with that! The backend is written in Go using the Chi router with a hexagonal architecture. Each feature has its own domain, ports, and adapters — making it easy to test, extend, or remove without touching other modules.",
-  "Absolutely. The database layer uses pure SQL with golang-migrate for migrations. No ORM, no query builder. This gives you full control over performance and lets you write optimized queries for each use case.",
-  "That is a great approach! For the frontend, CleanSaaS uses a feature-based architecture with Next.js 15. Each feature lives in its own folder under `features/` with components, actions, hooks, and types — completely self-contained.",
-  "Happy to explain! The billing module integrates with Stripe for payments. It supports multiple plans, checkout sessions, customer portals, and webhook handling. Like every other module, it can be removed entirely if your project does not need billing.",
-];
-
 function initialConversations(): Conversation[] {
   return [
     {
-      id: "conv-getting-started",
-      title: "Getting Started",
-      messages: [
-        {
-          id: uid(),
-          role: "user",
-          content: "What can you help me with?",
-        },
-        {
-          id: uid(),
-          role: "assistant",
-          content:
-            "I can help with coding, writing, analysis, math, and creative tasks. I\u2019m built on a swappable AI provider architecture \u2014 you can use Gemini, OpenAI, or Claude as the backend. What would you like to try?",
-        },
-      ],
-    },
-    {
-      id: "conv-code-review",
-      title: "Code Review",
-      messages: [
-        {
-          id: uid(),
-          role: "user",
-          content: "Can you review Go code for best practices?",
-        },
-        {
-          id: uid(),
-          role: "assistant",
-          content:
-            "Of course! I can review Go code for idiomatic patterns, error handling, concurrency safety, and performance. Just paste your code and I\u2019ll provide detailed feedback with suggestions.",
-        },
-        {
-          id: uid(),
-          role: "user",
-          content: "What about frontend React code?",
-        },
-        {
-          id: uid(),
-          role: "assistant",
-          content:
-            "Absolutely. I can review React and Next.js code for component structure, hook usage, performance optimizations, accessibility, and TypeScript best practices. I\u2019ll flag any anti-patterns and suggest improvements.",
-        },
-      ],
-    },
-    {
-      id: "conv-recipe-ideas",
-      title: "Recipe Ideas",
-      messages: [
-        {
-          id: uid(),
-          role: "user",
-          content: "Give me a quick pasta recipe.",
-        },
-        {
-          id: uid(),
-          role: "assistant",
-          content:
-            "Here is a 15-minute aglio e olio:\n\n1. Boil 400g spaghetti in salted water until al dente\n2. Slice 6 cloves of garlic thinly\n3. Heat 1/3 cup olive oil, add garlic and a pinch of red pepper flakes\n4. Cook until garlic is golden (not brown!)\n5. Toss drained pasta in the oil, add pasta water as needed\n6. Finish with fresh parsley and parmesan\n\nSimple, fast, and delicious!",
-        },
-      ],
+      id: "conv-welcome",
+      title: "Welcome",
+      messages: [],
     },
   ];
 }
@@ -239,6 +179,18 @@ function IconSparkles({ className }: { className?: string }) {
   );
 }
 
+function IconStop({ className }: { className?: string }) {
+  return (
+    <svg
+      className={className}
+      fill="currentColor"
+      viewBox="0 0 24 24"
+    >
+      <rect x="6" y="6" width="12" height="12" rx="2" />
+    </svg>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Typing indicator
 // ---------------------------------------------------------------------------
@@ -314,100 +266,185 @@ export function AiDemo() {
   const [conversations, setConversations] = useState<Conversation[]>(
     initialConversations
   );
-  const [activeConvId, setActiveConvId] = useState("conv-getting-started");
+  const [activeConvId, setActiveConvId] = useState("conv-welcome");
   const [input, setInput] = useState("");
-  const [isTyping, setIsTyping] = useState(false);
+  const [isStreaming, setIsStreaming] = useState(false);
+  const [waitingForStream, setWaitingForStream] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [responseIndex, setResponseIndex] = useState(0);
+  const [error, setError] = useState<string | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   const activeConversation = conversations.find((c) => c.id === activeConvId);
 
   // Auto-scroll to bottom when messages change
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [activeConversation?.messages, isTyping]);
+  }, [activeConversation?.messages, isStreaming, waitingForStream]);
 
   // Focus input on conversation switch
   useEffect(() => {
     inputRef.current?.focus();
   }, [activeConvId]);
 
-  const streamResponse = useCallback(
-    (convId: string, fullText: string) => {
-      const words = fullText.split(" ");
-      let current = "";
-      const msgId = uid();
-      let wordIndex = 0;
+  const stopStreaming = useCallback(() => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+      setIsStreaming(false);
+      setWaitingForStream(false);
+    }
+  }, []);
 
-      // Add empty assistant message
+  const handleSend = useCallback(async () => {
+    const trimmed = input.trim();
+    if (!trimmed || isStreaming || waitingForStream || !activeConversation)
+      return;
+
+    setError(null);
+
+    // Add user message
+    const userMsg: Message = { id: uid(), role: "user", content: trimmed };
+    const assistantMsgId = uid();
+
+    setConversations((prev) =>
+      prev.map((c) =>
+        c.id === activeConvId
+          ? {
+              ...c,
+              title:
+                c.messages.length === 0
+                  ? trimmed.length > 30
+                    ? trimmed.slice(0, 30) + "..."
+                    : trimmed
+                  : c.title,
+              messages: [...c.messages, userMsg],
+            }
+          : c
+      )
+    );
+    setInput("");
+    setWaitingForStream(true);
+
+    // Build the message history to send to the API
+    const historyMessages = [
+      ...activeConversation.messages.map((m) => ({
+        role: m.role,
+        content: m.content,
+      })),
+      { role: "user" as const, content: trimmed },
+    ];
+
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
+    try {
+      const res = await fetch(`${API_URL}/demo/ai/chat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ messages: historyMessages }),
+        signal: controller.signal,
+      });
+
+      if (!res.ok) {
+        const errData = await res.json().catch(() => null);
+        throw new Error(
+          (errData as { error?: string })?.error ?? `Request failed (${res.status})`
+        );
+      }
+
+      const reader = res.body?.getReader();
+      if (!reader) {
+        throw new Error("No response stream available");
+      }
+
+      // Add empty assistant message placeholder
       setConversations((prev) =>
         prev.map((c) =>
-          c.id === convId
+          c.id === activeConvId
             ? {
                 ...c,
                 messages: [
                   ...c.messages,
-                  { id: msgId, role: "assistant" as const, content: "" },
+                  { id: assistantMsgId, role: "assistant" as const, content: "" },
                 ],
               }
             : c
         )
       );
+      setWaitingForStream(false);
+      setIsStreaming(true);
 
-      const interval = setInterval(() => {
-        if (wordIndex < words.length) {
-          current += (wordIndex > 0 ? " " : "") + words[wordIndex];
-          wordIndex++;
-          setConversations((prev) =>
-            prev.map((c) =>
-              c.id === convId
-                ? {
-                    ...c,
-                    messages: c.messages.map((m) =>
-                      m.id === msgId ? { ...m, content: current } : m
-                    ),
-                  }
-                : c
-            )
-          );
-        } else {
-          clearInterval(interval);
-          setIsTyping(false);
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
+
+        for (const line of lines) {
+          if (line.startsWith("event: done")) {
+            break;
+          }
+          if (line.startsWith("event: error")) {
+            // Next data line will contain the error message
+            continue;
+          }
+          if (line.startsWith("data: ")) {
+            const chunk = line.slice(6);
+            if (chunk === "[DONE]") break;
+            setConversations((prev) =>
+              prev.map((c) =>
+                c.id === activeConvId
+                  ? {
+                      ...c,
+                      messages: c.messages.map((m) =>
+                        m.id === assistantMsgId
+                          ? { ...m, content: m.content + chunk }
+                          : m
+                      ),
+                    }
+                  : c
+              )
+            );
+          }
         }
-      }, 40);
-    },
-    []
-  );
+      }
+    } catch (err: unknown) {
+      if (err instanceof DOMException && err.name === "AbortError") {
+        return;
+      }
 
-  const handleSend = useCallback(() => {
-    const trimmed = input.trim();
-    if (!trimmed || isTyping || !activeConversation) return;
+      const errorMessage =
+        err instanceof Error ? err.message : "Failed to get AI response";
+      setError(errorMessage);
 
-    // Add user message
-    const userMsg: Message = { id: uid(), role: "user", content: trimmed };
-    setConversations((prev) =>
-      prev.map((c) =>
-        c.id === activeConvId
-          ? { ...c, messages: [...c.messages, userMsg] }
-          : c
-      )
-    );
-    setInput("");
-    setIsTyping(true);
-
-    // Pick next AI response and cycle
-    const response = AI_RESPONSES[responseIndex % AI_RESPONSES.length];
-    setResponseIndex((i) => i + 1);
-
-    // Simulate delay before streaming starts
-    const delay = 1000 + Math.random() * 1000;
-    setTimeout(() => {
-      streamResponse(activeConvId, response);
-    }, delay);
-  }, [input, isTyping, activeConversation, activeConvId, responseIndex, streamResponse]);
+      // Remove empty assistant placeholder on error
+      setConversations((prev) =>
+        prev.map((c) =>
+          c.id === activeConvId
+            ? {
+                ...c,
+                messages: c.messages.filter(
+                  (m) => !(m.id === assistantMsgId && m.content === "")
+                ),
+              }
+            : c
+        )
+      );
+    } finally {
+      setIsStreaming(false);
+      setWaitingForStream(false);
+      abortControllerRef.current = null;
+    }
+  }, [input, isStreaming, waitingForStream, activeConversation, activeConvId]);
 
   const handleNewConversation = useCallback(() => {
     const newConv: Conversation = {
@@ -431,6 +468,8 @@ export function AiDemo() {
       handleSend();
     }
   };
+
+  const isBusy = isStreaming || waitingForStream;
 
   return (
     <div className="flex flex-col h-[calc(100vh-4rem)]">
@@ -522,7 +561,7 @@ export function AiDemo() {
           {/* Sidebar footer */}
           <div className="p-3 border-t border-border">
             <p className="text-xs text-muted-foreground text-center">
-              Demo mode &mdash; no data is saved
+              Demo mode &mdash; conversations are not saved
             </p>
           </div>
         </aside>
@@ -531,7 +570,7 @@ export function AiDemo() {
         <main className="flex-1 flex flex-col min-w-0 bg-background">
           {/* Messages */}
           <div className="flex-1 overflow-y-auto px-4 py-6 space-y-4">
-            {activeConversation && activeConversation.messages.length === 0 && (
+            {activeConversation && activeConversation.messages.length === 0 && !waitingForStream && (
               <div className="flex flex-col items-center justify-center h-full text-center gap-4">
                 <div className="h-16 w-16 rounded-2xl bg-primary/10 flex items-center justify-center">
                   <IconSparkles className="h-8 w-8 text-primary" />
@@ -541,8 +580,8 @@ export function AiDemo() {
                     Start a conversation
                   </h2>
                   <p className="text-sm text-muted-foreground mt-1 max-w-sm">
-                    Type a message below to see the AI chat in action. Responses
-                    are simulated for this demo.
+                    Ask me anything — coding, writing, math, science, creative
+                    tasks, or general knowledge. Powered by Gemini.
                   </p>
                 </div>
               </div>
@@ -552,7 +591,15 @@ export function AiDemo() {
               <MessageBubble key={msg.id} message={msg} />
             ))}
 
-            {isTyping && <TypingIndicator />}
+            {waitingForStream && <TypingIndicator />}
+
+            {error && (
+              <div className="flex justify-center">
+                <p className="text-sm text-destructive bg-destructive/10 border border-destructive/20 rounded-lg px-4 py-2">
+                  {error}
+                </p>
+              </div>
+            )}
 
             <div ref={messagesEndRef} />
           </div>
@@ -567,9 +614,9 @@ export function AiDemo() {
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={handleKeyDown}
                 placeholder={
-                  isTyping ? "AI is responding..." : "Type a message..."
+                  isBusy ? "AI is responding..." : "Type a message..."
                 }
-                disabled={isTyping}
+                disabled={isBusy}
                 className={cn(
                   "flex-1 rounded-lg border border-border bg-background px-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground",
                   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
@@ -577,23 +624,37 @@ export function AiDemo() {
                   "transition-colors"
                 )}
               />
-              <button
-                onClick={handleSend}
-                disabled={isTyping || !input.trim()}
-                className={cn(
-                  "flex-shrink-0 h-10 w-10 rounded-lg flex items-center justify-center transition-all",
-                  "bg-primary text-primary-foreground hover:opacity-90",
-                  "disabled:opacity-50 disabled:cursor-not-allowed",
-                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                )}
-                aria-label="Send message"
-              >
-                <IconSend className="h-4 w-4" />
-              </button>
+              {isStreaming ? (
+                <button
+                  onClick={stopStreaming}
+                  className={cn(
+                    "flex-shrink-0 h-10 w-10 rounded-lg flex items-center justify-center transition-all",
+                    "bg-destructive text-destructive-foreground hover:opacity-90",
+                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  )}
+                  aria-label="Stop streaming"
+                >
+                  <IconStop className="h-4 w-4" />
+                </button>
+              ) : (
+                <button
+                  onClick={handleSend}
+                  disabled={isBusy || !input.trim()}
+                  className={cn(
+                    "flex-shrink-0 h-10 w-10 rounded-lg flex items-center justify-center transition-all",
+                    "bg-primary text-primary-foreground hover:opacity-90",
+                    "disabled:opacity-50 disabled:cursor-not-allowed",
+                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  )}
+                  aria-label="Send message"
+                >
+                  <IconSend className="h-4 w-4" />
+                </button>
+              )}
             </div>
             <p className="text-xs text-muted-foreground text-center mt-2">
-              This is a demo with simulated responses. In production, responses
-              come from your configured AI provider.
+              Powered by Gemini. No account required. Conversations stay in
+              your browser.
             </p>
           </div>
         </main>

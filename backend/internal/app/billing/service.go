@@ -69,7 +69,76 @@ func (s *Service) CreateCheckout(ctx context.Context, userID, planID string) (st
 	successURL := fmt.Sprintf("%s/settings/billing?success=true", s.frontendURL)
 	cancelURL := fmt.Sprintf("%s/pricing?canceled=true", s.frontendURL)
 
-	return s.payment.CreateCheckoutSession(ctx, customerID, plan.StripePriceID, successURL, cancelURL)
+	// Lifetime plans are one-time payments, not subscriptions
+	mode := service.CheckoutModeSubscription
+	if plan.IsLifetime() {
+		mode = service.CheckoutModePayment
+	}
+
+	return s.payment.CreateCheckoutSessionWithMode(ctx, customerID, plan.StripePriceID, successURL, cancelURL, mode)
+}
+
+// DemoCheckout creates a Stripe Checkout Session for the public demo page.
+// No user account is required — Stripe will collect the email on its checkout page.
+func (s *Service) DemoCheckout(ctx context.Context, planID, successURL, cancelURL string) (string, error) {
+	plan, err := s.plans.FindByID(ctx, planID)
+	if err != nil {
+		return "", fmt.Errorf("finding plan: %w", err)
+	}
+
+	if plan.PriceCents == 0 {
+		return "", domain.ErrValidation
+	}
+
+	mode := service.CheckoutModeSubscription
+	if plan.IsLifetime() {
+		mode = service.CheckoutModePayment
+	}
+
+	return s.payment.CreateGuestCheckoutSession(ctx, plan.StripePriceID, successURL, cancelURL, mode)
+}
+
+// DemoSessionInfo holds the data returned by GetDemoSession for the frontend demo.
+type DemoSessionInfo struct {
+	PlanName      string `json:"plan_name"`
+	PriceCents    int    `json:"price_cents"`
+	Interval      string `json:"interval"`
+	CustomerID    string `json:"customer_id"`
+	CustomerEmail string `json:"customer_email"`
+	Mode          string `json:"mode"`
+	Status        string `json:"status"`
+}
+
+// GetDemoSession retrieves a completed Stripe Checkout Session and enriches it
+// with plan details from the database.
+func (s *Service) GetDemoSession(ctx context.Context, sessionID string) (*DemoSessionInfo, error) {
+	sess, err := s.payment.RetrieveCheckoutSession(ctx, sessionID)
+	if err != nil {
+		return nil, fmt.Errorf("retrieving session: %w", err)
+	}
+
+	info := &DemoSessionInfo{
+		CustomerID:    sess.CustomerID,
+		CustomerEmail: sess.CustomerEmail,
+		Mode:          sess.Mode,
+		Status:        sess.Status,
+	}
+
+	if sess.PriceID != "" {
+		plan, err := s.plans.FindByStripePriceID(ctx, sess.PriceID)
+		if err == nil {
+			info.PlanName = plan.Name
+			info.PriceCents = plan.PriceCents
+			info.Interval = plan.Interval
+		}
+	}
+
+	return info, nil
+}
+
+// DemoPortalSession creates a Stripe Billing Portal session for a demo customer.
+func (s *Service) DemoPortalSession(ctx context.Context, customerID, returnURL string) (string, error) {
+	return s.payment.CreateBillingPortalSession(ctx, customerID, returnURL)
 }
 
 func (s *Service) GetSubscription(ctx context.Context, userID string) (*domainbilling.Subscription, error) {

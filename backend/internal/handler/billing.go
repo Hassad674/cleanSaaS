@@ -119,6 +119,74 @@ func (h *BillingHandler) GetInvoices(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// DemoCheckout handles POST /demo/billing/checkout
+// Creates a real Stripe Checkout Session without requiring authentication.
+// Used by the public demo page to demonstrate the billing flow.
+func (h *BillingHandler) DemoCheckout(w http.ResponseWriter, r *http.Request) {
+	var req request.DemoCheckoutRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		response.Error(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	if req.PlanID == "" {
+		response.Error(w, http.StatusBadRequest, "plan_id is required")
+		return
+	}
+	if req.SuccessURL == "" || req.CancelURL == "" {
+		response.Error(w, http.StatusBadRequest, "success_url and cancel_url are required")
+		return
+	}
+
+	url, err := h.svc.DemoCheckout(r.Context(), req.PlanID, req.SuccessURL, req.CancelURL)
+	if err != nil {
+		response.HandleDomainError(w, err)
+		return
+	}
+
+	response.JSON(w, http.StatusOK, map[string]string{"url": url})
+}
+
+// DemoSession handles GET /demo/billing/session?session_id=xxx
+// Retrieves a completed Stripe Checkout Session and returns plan details.
+func (h *BillingHandler) DemoSession(w http.ResponseWriter, r *http.Request) {
+	sessionID := r.URL.Query().Get("session_id")
+	if sessionID == "" {
+		response.Error(w, http.StatusBadRequest, "session_id is required")
+		return
+	}
+
+	info, err := h.svc.GetDemoSession(r.Context(), sessionID)
+	if err != nil {
+		response.Error(w, http.StatusInternalServerError, "failed to retrieve session")
+		return
+	}
+
+	response.JSON(w, http.StatusOK, info)
+}
+
+// DemoPortal handles POST /demo/billing/portal
+// Creates a Stripe Billing Portal session for a demo customer so they can
+// manage their subscription (upgrade, cancel, update payment method).
+func (h *BillingHandler) DemoPortal(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		CustomerID string `json:"customer_id"`
+		ReturnURL  string `json:"return_url"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.CustomerID == "" || req.ReturnURL == "" {
+		response.Error(w, http.StatusBadRequest, "customer_id and return_url are required")
+		return
+	}
+
+	url, err := h.svc.DemoPortalSession(r.Context(), req.CustomerID, req.ReturnURL)
+	if err != nil {
+		response.Error(w, http.StatusInternalServerError, "failed to create portal session")
+		return
+	}
+
+	response.JSON(w, http.StatusOK, map[string]string{"url": url})
+}
+
 func (h *BillingHandler) HandleWebhook(w http.ResponseWriter, r *http.Request) {
 	payload, err := io.ReadAll(io.LimitReader(r.Body, 65536))
 	if err != nil {

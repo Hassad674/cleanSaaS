@@ -11,6 +11,18 @@ import (
 	"github.com/hassad/boilerplateSaaS/backend/internal/port/service"
 )
 
+// defaultSystemInstruction is set on every model to provide broad,
+// helpful behaviour across all topics.
+const defaultSystemInstruction = `You are a helpful, knowledgeable, and friendly AI assistant. You can help with anything: coding, writing, math, science, analysis, brainstorming, creative tasks, general knowledge, and more.
+
+Guidelines:
+- Give thorough, accurate, and well-structured answers
+- Use markdown formatting when it helps readability (headers, lists, code blocks, bold, etc.)
+- When asked about code, provide working examples with explanations
+- Be conversational and natural — avoid sounding robotic or overly formal
+- If you're unsure about something, say so honestly
+- Adapt your response length to the complexity of the question — short for simple questions, detailed for complex ones`
+
 type AIService struct {
 	client *genai.Client
 	model  string
@@ -19,12 +31,21 @@ type AIService struct {
 func NewAIService(client *genai.Client) *AIService {
 	return &AIService{
 		client: client,
-		model:  "gemini-2.0-flash",
+		model:  "gemini-2.5-flash",
 	}
+}
+
+// configureModel applies shared settings (system instruction, temperature)
+// to the given GenerativeModel.
+func (s *AIService) configureModel(model *genai.GenerativeModel) {
+	model.SystemInstruction = genai.NewUserContent(genai.Text(defaultSystemInstruction))
+	temp := float32(0.7)
+	model.Temperature = &temp
 }
 
 func (s *AIService) Chat(ctx context.Context, messages []ai.Message) (*service.AIResponse, error) {
 	model := s.client.GenerativeModel(s.model)
+	s.configureModel(model)
 
 	cs := model.StartChat()
 	cs.History = toGeminiHistory(messages[:len(messages)-1])
@@ -50,6 +71,7 @@ func (s *AIService) Chat(ctx context.Context, messages []ai.Message) (*service.A
 
 func (s *AIService) Stream(ctx context.Context, messages []ai.Message, writer io.Writer) error {
 	model := s.client.GenerativeModel(s.model)
+	s.configureModel(model)
 
 	cs := model.StartChat()
 	cs.History = toGeminiHistory(messages[:len(messages)-1])

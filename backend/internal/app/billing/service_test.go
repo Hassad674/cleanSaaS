@@ -131,11 +131,13 @@ func (m *mockInvoiceRepo) ListByUserID(_ context.Context, _ string, _, _ int) ([
 }
 
 type mockPaymentSvc struct {
-	createCustomerFn  func(ctx context.Context, email, name string) (string, error)
-	createCheckoutFn  func(ctx context.Context, customerID, priceID, successURL, cancelURL string) (string, error)
-	createPortalFn    func(ctx context.Context, customerID, returnURL string) (string, error)
-	cancelSubFn       func(ctx context.Context, subscriptionID string) error
-	handleWebhookFn   func(payload []byte, signature string) (*service.PaymentEvent, error)
+	createCustomerFn       func(ctx context.Context, email, name string) (string, error)
+	createCheckoutFn       func(ctx context.Context, customerID, priceID, successURL, cancelURL string) (string, error)
+	createCheckoutModeFn   func(ctx context.Context, customerID, priceID, successURL, cancelURL string, mode service.CheckoutMode) (string, error)
+	createGuestCheckoutFn  func(ctx context.Context, priceID, successURL, cancelURL string, mode service.CheckoutMode) (string, error)
+	createPortalFn         func(ctx context.Context, customerID, returnURL string) (string, error)
+	cancelSubFn            func(ctx context.Context, subscriptionID string) error
+	handleWebhookFn        func(payload []byte, signature string) (*service.PaymentEvent, error)
 }
 
 func (m *mockPaymentSvc) CreateCustomer(ctx context.Context, email, name string) (string, error) {
@@ -149,6 +151,18 @@ func (m *mockPaymentSvc) CreateCheckoutSession(ctx context.Context, customerID, 
 		return m.createCheckoutFn(ctx, customerID, priceID, successURL, cancelURL)
 	}
 	return "https://checkout.stripe.com/test", nil
+}
+func (m *mockPaymentSvc) CreateCheckoutSessionWithMode(ctx context.Context, customerID, priceID, successURL, cancelURL string, mode service.CheckoutMode) (string, error) {
+	if m.createCheckoutModeFn != nil {
+		return m.createCheckoutModeFn(ctx, customerID, priceID, successURL, cancelURL, mode)
+	}
+	return "https://checkout.stripe.com/test", nil
+}
+func (m *mockPaymentSvc) CreateGuestCheckoutSession(ctx context.Context, priceID, successURL, cancelURL string, mode service.CheckoutMode) (string, error) {
+	if m.createGuestCheckoutFn != nil {
+		return m.createGuestCheckoutFn(ctx, priceID, successURL, cancelURL, mode)
+	}
+	return "https://checkout.stripe.com/guest-test", nil
 }
 func (m *mockPaymentSvc) CreateBillingPortalSession(ctx context.Context, customerID, returnURL string) (string, error) {
 	if m.createPortalFn != nil {
@@ -180,11 +194,12 @@ func TestBillingService_CreateCheckout_Success(t *testing.T) {
 	}
 	planRepo := &mockPlanRepo{
 		findByIDFn: func(_ context.Context, _ string) (*domainbilling.Plan, error) {
-			return &domainbilling.Plan{ID: "p1", StripePriceID: "price_pro"}, nil
+			return &domainbilling.Plan{ID: "p1", StripePriceID: "price_pro", Interval: "month"}, nil
 		},
 	}
 	paymentSvc := &mockPaymentSvc{
-		createCheckoutFn: func(_ context.Context, _, _, _, _ string) (string, error) {
+		createCheckoutModeFn: func(_ context.Context, _, _, _, _ string, mode service.CheckoutMode) (string, error) {
+			assert.Equal(t, service.CheckoutModeSubscription, mode)
 			checkoutURL = "https://checkout.stripe.com/session123"
 			return checkoutURL, nil
 		},
@@ -211,7 +226,7 @@ func TestBillingService_CreateCheckout_CreatesStripeCustomer(t *testing.T) {
 	}
 	planRepo := &mockPlanRepo{
 		findByIDFn: func(_ context.Context, _ string) (*domainbilling.Plan, error) {
-			return &domainbilling.Plan{ID: "p1", StripePriceID: "price_pro"}, nil
+			return &domainbilling.Plan{ID: "p1", StripePriceID: "price_pro", Interval: "month"}, nil
 		},
 	}
 	paymentSvc := &mockPaymentSvc{
@@ -380,6 +395,86 @@ func TestBillingService_HandleWebhook_SubscriptionUpdated_Existing(t *testing.T)
 	assert.NoError(t, err)
 	assert.Equal(t, "p_new", updatedSub.PlanID)
 	assert.Equal(t, domainbilling.StatusActive, updatedSub.Status)
+}
+
+func TestBillingService_CreateCheckout_LifetimePlan(t *testing.T) {
+	var receivedMode service.CheckoutMode
+	userRepo := &mockUserRepo{
+		findByIDFn: func(_ context.Context, _ string) (*user.User, error) {
+			return &user.User{ID: "u1", Email: "test@test.com", Name: "Test", StripeID: "cus_123"}, nil
+		},
+	}
+	planRepo := &mockPlanRepo{
+		findByIDFn: func(_ context.Context, _ string) (*domainbilling.Plan, error) {
+			return &domainbilling.Plan{ID: "p1", StripePriceID: "price_lifetime", Interval: "lifetime"}, nil
+		},
+	}
+	paymentSvc := &mockPaymentSvc{
+		createCheckoutModeFn: func(_ context.Context, _, _, _, _ string, mode service.CheckoutMode) (string, error) {
+			receivedMode = mode
+			return "https://checkout.stripe.com/lifetime", nil
+		},
+	}
+
+	svc := NewService(userRepo, &mockSubRepo{}, planRepo, &mockInvoiceRepo{}, paymentSvc, "http://localhost:3006")
+	url, err := svc.CreateCheckout(context.Background(), "u1", "p1")
+	assert.NoError(t, err)
+	assert.Equal(t, "https://checkout.stripe.com/lifetime", url)
+	assert.Equal(t, service.CheckoutModePayment, receivedMode)
+}
+
+func TestBillingService_DemoCheckout_Success(t *testing.T) {
+	var receivedMode service.CheckoutMode
+	planRepo := &mockPlanRepo{
+		findByIDFn: func(_ context.Context, _ string) (*domainbilling.Plan, error) {
+			return &domainbilling.Plan{ID: "p1", StripePriceID: "price_pro_monthly", PriceCents: 1900, Interval: "month"}, nil
+		},
+	}
+	paymentSvc := &mockPaymentSvc{
+		createGuestCheckoutFn: func(_ context.Context, _, _, _ string, mode service.CheckoutMode) (string, error) {
+			receivedMode = mode
+			return "https://checkout.stripe.com/guest", nil
+		},
+	}
+
+	svc := NewService(&mockUserRepo{}, &mockSubRepo{}, planRepo, &mockInvoiceRepo{}, paymentSvc, "http://localhost:3006")
+	url, err := svc.DemoCheckout(context.Background(), "p1", "http://localhost/success", "http://localhost/cancel")
+	assert.NoError(t, err)
+	assert.Equal(t, "https://checkout.stripe.com/guest", url)
+	assert.Equal(t, service.CheckoutModeSubscription, receivedMode)
+}
+
+func TestBillingService_DemoCheckout_FreePlanRejected(t *testing.T) {
+	planRepo := &mockPlanRepo{
+		findByIDFn: func(_ context.Context, _ string) (*domainbilling.Plan, error) {
+			return &domainbilling.Plan{ID: "free", StripePriceID: "price_free", PriceCents: 0, Interval: "month"}, nil
+		},
+	}
+
+	svc := NewService(&mockUserRepo{}, &mockSubRepo{}, planRepo, &mockInvoiceRepo{}, &mockPaymentSvc{}, "http://localhost:3006")
+	_, err := svc.DemoCheckout(context.Background(), "free", "http://localhost/success", "http://localhost/cancel")
+	assert.Error(t, err)
+}
+
+func TestBillingService_DemoCheckout_LifetimeMode(t *testing.T) {
+	var receivedMode service.CheckoutMode
+	planRepo := &mockPlanRepo{
+		findByIDFn: func(_ context.Context, _ string) (*domainbilling.Plan, error) {
+			return &domainbilling.Plan{ID: "p1", StripePriceID: "price_lifetime", PriceCents: 49900, Interval: "lifetime"}, nil
+		},
+	}
+	paymentSvc := &mockPaymentSvc{
+		createGuestCheckoutFn: func(_ context.Context, _, _, _ string, mode service.CheckoutMode) (string, error) {
+			receivedMode = mode
+			return "https://checkout.stripe.com/guest-lifetime", nil
+		},
+	}
+
+	svc := NewService(&mockUserRepo{}, &mockSubRepo{}, planRepo, &mockInvoiceRepo{}, paymentSvc, "http://localhost:3006")
+	url, err := svc.DemoCheckout(context.Background(), "p1", "http://localhost/success", "http://localhost/cancel")
+	assert.NoError(t, err)
+	assert.Equal(t, "https://checkout.stripe.com/guest-lifetime", url)
+	assert.Equal(t, service.CheckoutModePayment, receivedMode)
 }
 
 // Helper to skip the unused import warning

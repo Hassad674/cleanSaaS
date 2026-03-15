@@ -20,6 +20,7 @@ import (
 	appteam "github.com/hassad/boilerplateSaaS/backend/internal/app/team"
 	"github.com/hassad/boilerplateSaaS/backend/internal/app/user"
 	"github.com/hassad/boilerplateSaaS/backend/internal/handler/middleware"
+	"github.com/hassad/boilerplateSaaS/backend/internal/port/service"
 	"github.com/hassad/boilerplateSaaS/backend/pkg/jwt"
 	"github.com/hassad/boilerplateSaaS/backend/pkg/ws"
 )
@@ -41,6 +42,7 @@ func NewRouter(
 	frontendURL string,
 	db *sql.DB,
 	logger *slog.Logger,
+	demoAI service.AIService,
 ) http.Handler {
 	r := chi.NewRouter()
 
@@ -83,6 +85,15 @@ func NewRouter(
 		billingHandler := NewBillingHandler(billingSvc)
 		r.Get("/billing/plans", billingHandler.GetPlans)
 		r.Post("/webhooks/stripe", billingHandler.HandleWebhook)
+
+		// Public demo billing (no auth required, real Stripe in test mode)
+		demoBillingLimiter := middleware.NewRateLimiter(20)
+		r.Route("/demo/billing", func(r chi.Router) {
+			r.Use(middleware.RateLimit(demoBillingLimiter))
+			r.Post("/checkout", billingHandler.DemoCheckout)
+			r.Get("/session", billingHandler.DemoSession)
+			r.Post("/portal", billingHandler.DemoPortal)
+		})
 	}
 
 	// Public blog routes
@@ -90,6 +101,28 @@ func NewRouter(
 	r.Get("/blog/posts", blogHandler.ListPublished)
 	r.Get("/blog/posts/{slug}", blogHandler.GetBySlug)
 	r.Get("/blog/tags", blogHandler.ListTags)
+
+	// Public demo AI chat (no auth required, no DB persistence)
+	if demoAI != nil {
+		demoHandler := NewDemoHandler(demoAI)
+		demoLimiter := middleware.NewRateLimiter(20) // 20 req/min for demo
+		r.Route("/demo/ai", func(r chi.Router) {
+			r.Use(middleware.RateLimit(demoLimiter))
+			r.Post("/chat", demoHandler.StreamChat)
+		})
+	}
+
+	// Public demo storage (no auth required, uses fixed demo user ID)
+	if storageSvc != nil {
+		demoStorageHandler := NewDemoStorageHandler(storageSvc)
+		demoStorageLimiter := middleware.NewRateLimiter(20) // 20 req/min for demo
+		r.Route("/demo/storage", func(r chi.Router) {
+			r.Use(middleware.RateLimit(demoStorageLimiter))
+			r.With(middleware.MaxBodySize(10 << 20)).Post("/upload", demoStorageHandler.Upload)
+			r.Get("/files", demoStorageHandler.List)
+			r.Delete("/files/{id}", demoStorageHandler.Delete)
+		})
+	}
 
 	// Protected routes
 	r.Group(func(r chi.Router) {
@@ -118,7 +151,7 @@ func NewRouter(
 		// Storage (authenticated)
 		if storageSvc != nil {
 			storageHandler := NewStorageHandler(storageSvc)
-			r.Post("/files/upload", storageHandler.Upload)
+			r.With(middleware.MaxBodySize(50 << 20)).Post("/files/upload", storageHandler.Upload)
 			r.Get("/files", storageHandler.List)
 			r.Delete("/files/{id}", storageHandler.Delete)
 		}

@@ -2,7 +2,7 @@ export type Plan = {
   id: string;
   name: string;
   price_cents: number;
-  interval: "month" | "year";
+  interval: "month" | "year" | "lifetime";
   features: string[];
 };
 

@@ -96,6 +96,33 @@ func TestPlan_Fields(t *testing.T) {
 	assert.True(t, plan.IsActive)
 }
 
+func TestPlan_IsLifetime(t *testing.T) {
+	tests := []struct {
+		name     string
+		interval string
+		expected bool
+	}{
+		{"Monthly plan", IntervalMonth, false},
+		{"Yearly plan", IntervalYear, false},
+		{"Lifetime plan", IntervalLifetime, true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			plan := &Plan{Interval: tt.interval}
+			assert.Equal(t, tt.expected, plan.IsLifetime())
+		})
+	}
+}
+
+func TestValidInterval(t *testing.T) {
+	assert.True(t, ValidInterval("month"))
+	assert.True(t, ValidInterval("year"))
+	assert.True(t, ValidInterval("lifetime"))
+	assert.False(t, ValidInterval("weekly"))
+	assert.False(t, ValidInterval(""))
+}
+
 func TestInvoice_Fields(t *testing.T) {
 	invoice := Invoice{
 		ID:              "inv-1",
