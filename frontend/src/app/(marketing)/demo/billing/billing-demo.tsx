@@ -142,12 +142,14 @@ function PricingCard({
   tier,
   interval,
   onCheckout,
+  onManagePortal,
   loading,
   currentPlanName,
 }: {
   tier: PlanTier;
   interval: BillingInterval;
   onCheckout: (planID: string) => void;
+  onManagePortal?: () => void;
   loading: string | null;
   currentPlanName?: string;
 }) {
@@ -237,13 +239,12 @@ function PricingCard({
         >
           Active
         </button>
-      ) : currentPlanName ? (
+      ) : currentPlanName && onManagePortal ? (
         <button
-          onClick={() => plan && onCheckout(plan.id)}
-          disabled={isLoading || !plan}
-          className="w-full bg-primary text-primary-foreground rounded-lg px-4 py-2.5 font-medium hover:opacity-90 transition-opacity disabled:opacity-50"
+          onClick={onManagePortal}
+          className="w-full bg-primary text-primary-foreground rounded-lg px-4 py-2.5 font-medium hover:opacity-90 transition-opacity"
         >
-          {isLoading ? "Redirecting..." : "Switch to this plan"}
+          Switch plan (prorated)
         </button>
       ) : (
         <button
@@ -574,6 +575,7 @@ export function BillingDemo() {
               tier={tier}
               interval={interval}
               onCheckout={handleCheckout}
+              onManagePortal={demoSession ? handleManagePortal : undefined}
               loading={checkoutLoading}
               currentPlanName={demoSession?.plan_name}
             />
