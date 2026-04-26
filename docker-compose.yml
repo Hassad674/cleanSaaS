@@ -1,6 +1,8 @@
 services:
   db:
     image: postgres:16-alpine
+    container_name: cleansaas-db
+    restart: unless-stopped
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
@@ -9,9 +11,16 @@ services:
       - "5433:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d cleansaas"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
   dbgate:
     image: dbgate/dbgate
+    container_name: cleansaas-dbgate
+    restart: unless-stopped
     ports:
       - "8082:3000"
     environment:
@@ -23,7 +32,8 @@ services:
       PORT_con1: 5432
       ENGINE_con1: postgres@dbgate-plugin-postgres
     depends_on:
-      - db
+      db:
+        condition: service_healthy
 
 volumes:
   pgdata:
