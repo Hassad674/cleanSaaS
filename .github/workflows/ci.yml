@@ -1,0 +1,167 @@
+name: CI
+
+# FAST pipeline (target < 10 min). This is the gate for branch protection.
+# The single required status check should be the `ci-gate` job below.
+
+on:
+  pull_request:
+  push:
+    branches: [main, master]
+
+# Least privilege: CI only needs to read the repo.
+permissions:
+  contents: read
+
+# Cancel superseded runs on the same ref to save minutes.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: backend (build / vet / lint / test)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      # Coverage floor for the WHOLE backend module. 50% is a pragmatic
+      # starting point; the domain/app layers should sit much higher and this
+      # threshold is intended to be raised over time. Bump this single value.
+      COVERAGE_THRESHOLD: "50"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+          cache: true
+          cache-dependency-path: backend/go.sum
+
+      - name: Build
+        run: go build ./...
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: latest
+          working-directory: backend
+
+      - name: Test (race + coverage)
+        run: go test ./... -race -covermode=atomic -coverprofile=coverage.out
+
+      - name: Coverage floor
+        run: |
+          total="$(go tool cover -func=coverage.out | awk '/^total:/ {print $3}' | tr -d '%')"
+          echo "Total backend coverage: ${total}% (threshold: ${COVERAGE_THRESHOLD}%)"
+          # Numeric comparison via awk so we handle decimals safely.
+          if awk -v t="$total" -v min="$COVERAGE_THRESHOLD" 'BEGIN { exit !(t + 0 < min + 0) }'; then
+            echo "::error::Backend coverage ${total}% is below the required ${COVERAGE_THRESHOLD}%"
+            exit 1
+          fi
+
+  frontend:
+    name: frontend (typecheck / test / build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      - name: Unit tests
+        run: npx vitest run
+
+      - name: Build
+        env:
+          NEXT_PUBLIC_API_URL: http://localhost:8081
+        run: npm run build
+
+  admin:
+    name: admin (typecheck / build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: admin
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: admin/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      - name: Build
+        run: npm run build
+
+  gates:
+    name: custom gates
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run gate scripts
+        run: bash scripts/ci/run-all.sh
+
+  ci-gate:
+    name: ci-gate (required check)
+    runs-on: ubuntu-latest
+    needs: [backend, frontend, admin, gates]
+    # Always run so we can convert skipped/cancelled/failed deps into a hard
+    # failure of this single required check.
+    if: always()
+    steps:
+      - name: Verify all required jobs succeeded
+        env:
+          BACKEND: ${{ needs.backend.result }}
+          FRONTEND: ${{ needs.frontend.result }}
+          ADMIN: ${{ needs.admin.result }}
+          GATES: ${{ needs.gates.result }}
+        run: |
+          echo "Job results:"
+          echo "  backend : $BACKEND"
+          echo "  frontend: $FRONTEND"
+          echo "  admin   : $ADMIN"
+          echo "  gates   : $GATES"
+          failed=0
+          for name in BACKEND FRONTEND ADMIN GATES; do
+            result="${!name}"
+            if [ "$result" != "success" ]; then
+              echo "::error::Required job '$name' did not succeed (result: $result)"
+              failed=1
+            fi
+          done
+          if [ "$failed" -ne 0 ]; then
+            echo "CI gate FAILED."
+            exit 1
+          fi
+          echo "CI gate PASSED: all required jobs succeeded."

@@ -1,0 +1,92 @@
+version: 2
+
+updates:
+  # ---------------------------------------------------------------------------
+  # Backend Go module
+  # ---------------------------------------------------------------------------
+  - package-ecosystem: gomod
+    directory: /backend
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 10
+    commit-message:
+      prefix: "chore(deps/backend)"
+    groups:
+      backend-minor-patch:
+        update-types:
+          - minor
+          - patch
+
+  # ---------------------------------------------------------------------------
+  # Frontend (Next.js) npm dependencies
+  # ---------------------------------------------------------------------------
+  - package-ecosystem: npm
+    directory: /frontend
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 10
+    commit-message:
+      prefix: "chore(deps/frontend)"
+    groups:
+      # Keep risky framework majors isolated for careful review.
+      frontend-framework-majors:
+        patterns:
+          - "react"
+          - "react-dom"
+          - "@types/react"
+          - "@types/react-dom"
+          - "next"
+          - "eslint-config-next"
+          - "tailwindcss"
+          - "@tailwindcss/*"
+        update-types:
+          - major
+      # Everything else: batch minor + patch together.
+      frontend-minor-patch:
+        update-types:
+          - minor
+          - patch
+
+  # ---------------------------------------------------------------------------
+  # Admin (Vite + React) npm dependencies
+  # ---------------------------------------------------------------------------
+  - package-ecosystem: npm
+    directory: /admin
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 10
+    commit-message:
+      prefix: "chore(deps/admin)"
+    groups:
+      # Keep risky framework majors isolated for careful review.
+      admin-framework-majors:
+        patterns:
+          - "react"
+          - "react-dom"
+          - "@types/react"
+          - "@types/react-dom"
+          - "tailwindcss"
+          - "@tailwindcss/*"
+        update-types:
+          - major
+      # Everything else: batch minor + patch together.
+      admin-minor-patch:
+        update-types:
+          - minor
+          - patch
+
+  # ---------------------------------------------------------------------------
+  # GitHub Actions used by the workflows above
+  # ---------------------------------------------------------------------------
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 10
+    commit-message:
+      prefix: "chore(deps/actions)"
+    groups:
+      actions-minor-patch:
+        update-types:
+          - minor
+          - patch

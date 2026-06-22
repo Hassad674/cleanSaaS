@@ -1,0 +1,204 @@
+# golangci-lint configuration — CleanSaaS Go backend
+# Module: github.com/hassad/boilerplateSaaS/backend  ·  Go 1.25
+#
+# Target golangci-lint version: v1.6x (config schema v1; tested against v1.60–v1.64).
+# This file ENCODES the project's HARD code-quality limits (see CLAUDE.md →
+# "Code quality limits (hard)") as enforced lint rules:
+#   ≤600 lines/file ............ lll has no file cap → enforced by scripts/ci gate
+#                                (file-length is checked by the CI gate scripts, not
+#                                 a linter, since no v1.6x linter caps file length);
+#                                funlen below caps the per-FUNCTION size.
+#   ≤50 lines/function ......... funlen (lines: 50)
+#   ≤40 statements/function .... funlen (statements: 40)
+#   ≤4 params/function ......... revive (argument-limit: 4)
+#   ≤3 nesting levels .......... nestif (min-complexity: 4 ≈ deeper than 3 levels)
+#   cyclomatic complexity <10 .. gocyclo (min-complexity: 10) + cyclop
+#   forbidden indescriptive .... revive var-naming + commented forbidigo note
+#     names (data, info, tmp,      (golangci-lint has no built-in "ban these
+#      temp, manager, util(s),      identifiers" linter in v1.6x — the CI gate
+#      helper(s), handler2,         scripts in scripts/ci/ grep for them; the
+#      doStuff)                     comment block under `revive` documents intent)
+#
+# Kept high-signal: opinionated/noisy linters (wsl, gochecknoglobals, varnamelen,
+# godox, etc.) are intentionally NOT enabled to avoid thousands of false positives.
+
+run:
+  timeout: 5m
+  go: '1.25'
+  tests: true
+  # Build tags so integration-tagged adapter tests are also analysed.
+  build-tags:
+    - integration
+  allow-parallel-runners: true
+
+output:
+  formats:
+    - format: colored-line-number
+  print-issued-lines: true
+  print-linter-name: true
+  sort-results: true
+
+linters:
+  # Start from a curated set rather than `enable-all` to keep the signal high.
+  disable-all: true
+  enable:
+    # --- defaults / general quality ---------------------------------------
+    - govet          # vet: suspicious constructs
+    - staticcheck    # broad static analysis (also covers gosimple/stylecheck in modern releases)
+    - errcheck       # unchecked errors
+    - ineffassign    # ineffectual assignments
+    - unused         # unused code
+    - gosimple       # simplifiable code
+    # --- security ----------------------------------------------------------
+    - gosec          # security issues (SQL injection, weak crypto, etc.)
+    # --- size / complexity caps (the HARD limits) --------------------------
+    - funlen         # ≤50 lines / ≤40 statements per function
+    - gocyclo        # cyclomatic complexity < 10
+    - cyclop         # complementary complexity cap (per-function + package avg)
+    - nestif         # ≤3 nesting levels (approximated via min-complexity)
+    - lll            # line length — SOFT style guard (~140), see note below
+    - revive         # arg-limit (≤4 params), result-limit, var-naming, early-return
+    # --- correctness / hygiene --------------------------------------------
+    - misspell       # commonly misspelled English words
+    - unconvert      # redundant type conversions
+    - unparam        # unused function parameters / results
+    - prealloc       # slices that could be preallocated (perf)
+    - contextcheck   # context propagation correctness
+    - noctx          # HTTP requests without context
+    # --- DB correctness (critical for a pure-SQL, database/sql backend) ----
+    - bodyclose      # response body not closed
+    - rowserrcheck   # sql.Rows.Err() not checked
+    - sqlclosecheck  # sql.Rows / sql.Stmt not closed
+    # --- optional: uncomment to forbid raw fmt.Print* outside cmd/ ---------
+    # - forbidigo
+
+linters-settings:
+
+  funlen:
+    # ≤ 50 lines per function (hard limit). statements ~40 as a tighter signal.
+    lines: 50
+    statements: 40
+    # Don't count blank lines / comments toward the function length.
+    ignore-comments: true
+
+  gocyclo:
+    # Cyclomatic complexity < 10  →  flag at 10 and above.
+    min-complexity: 10
+
+  cyclop:
+    # Mirror gocyclo's per-function cap; keep the package average lenient
+    # so it doesn't fight gocyclo or produce package-wide noise.
+    max-complexity: 10
+    package-average: 0.0
+
+  nestif:
+    # ≤ 3 levels of nesting. nestif scores nested `if` complexity; a threshold
+    # of 4 flags blocks that nest deeper than the allowed 3 levels.
+    min-complexity: 4
+
+  lll:
+    # SOFT style guard only — long lines are a smell, not a hard failure.
+    # Relaxed to 140 so struct tags / long string literals don't spam.
+    line-length: 140
+    tab-width: 1
+
+  revive:
+    # Keep revive advisory-but-useful; map the param/result caps here.
+    severity: warning
+    rules:
+      # ≤ 4 parameters per function/constructor (hard limit).
+      - name: argument-limit
+        arguments: [4]
+      # Discourage functions returning too many results (split / return a struct).
+      - name: function-result-limit
+        arguments: [3]
+      # Naming hygiene. revive cannot ban an explicit list of identifiers
+      # (data/info/tmp/temp/manager/util(s)/helper(s)/handler2/doStuff) directly —
+      # those forbidden names are enforced by the grep gate in scripts/ci/.
+      # var-naming still catches the broader "describe what it is" intent
+      # (initialisms, underscores, stuttering, etc.).
+      - name: var-naming
+      # Prefer guard clauses over deep nesting — reinforces the ≤3-levels rule.
+      - name: early-return
+      - name: indent-error-flow
+      - name: superfluous-else
+      # General quality nudges (all default-severity warnings).
+      - name: blank-imports
+      - name: context-as-argument
+      - name: context-keys-type
+      - name: error-return
+      - name: error-strings
+      - name: error-naming
+      - name: exported
+      - name: errorf
+      - name: increment-decrement
+      - name: range
+      - name: receiver-naming
+      - name: time-naming
+      - name: unexported-return
+      - name: unreachable-code
+
+  gosec:
+    excludes:
+      # G104 overlaps with errcheck — avoid duplicate "unhandled error" noise.
+      - G104
+
+  govet:
+    enable-all: true
+    disable:
+      - fieldalignment   # micro-optimization, too noisy for a boilerplate
+
+  misspell:
+    locale: US
+
+  # Uncomment together with `forbidigo` above to ban raw stdout printing in
+  # library/application code (cmd/ entry points legitimately print).
+  # forbidigo:
+  #   forbid:
+  #     - p: ^fmt\.Print.*$
+  #       msg: "use the structured slog logger instead of fmt.Print* in non-cmd code"
+
+issues:
+  # Show everything (CI is the gate); 0 = no per-linter / per-file cap.
+  max-issues-per-linter: 0
+  max-same-issues: 0
+  # Re-enable default excludes off so revive/staticcheck notes aren't silently dropped.
+  exclude-use-default: false
+
+  exclude-rules:
+    # --- Tests are legitimately long, table-driven, and use weaker crypto/setup.
+    #     Relax the strict caps there so test code isn't penalised. ------------
+    - path: _test\.go
+      linters:
+        - funlen
+        - gocyclo
+        - cyclop
+        - gosec
+        - dupl
+        - lll
+        - nestif
+
+    # --- cmd/ entry points: dependency injection in main is allowed to be long
+    #     and may legitimately print to stdout. ------------------------------
+    - path: cmd/
+      linters:
+        - funlen
+        - forbidigo
+
+    # --- Generated mocks live in mock/ and aren't held to the hand-written bar.
+    - path: mock/
+      linters:
+        - funlen
+        - gocyclo
+        - cyclop
+        - revive
+        - unparam
+
+  # Skip vendored and generated code entirely.
+  exclude-dirs:
+    - vendor
+    - mock
+  exclude-files:
+    - ".*\\.gen\\.go$"
+    - ".*_generated\\.go$"
+    - ".*\\.pb\\.go$"

@@ -1,0 +1,214 @@
+#!/usr/bin/env bash
+#
+# CleanSaaS pre-commit hook (zero dependency — pure bash).
+#
+# Deliberately NOT husky / lefthook: a fresh contributor needs nothing installed
+# beyond git + bash. Toolchains (go, node) are used when present and SKIPPED with
+# a notice when absent, so a contributor without Go can still commit frontend-only
+# changes (and vice-versa).
+#
+# It only inspects STAGED files (git diff --cached ... --diff-filter=ACM) so it is
+# fast and does not punish pre-existing debt elsewhere in the tree.
+#
+# Checks:
+#   1. Secrets  — refuse staged .env / .env.local / .env.production (etc.) files.
+#   2. Go       — gofmt -l on staged *.go (fail if unformatted); best-effort go vet.
+#   3. TS       — npx tsc --noEmit per affected app (frontend / admin), best-effort.
+#
+# ESCAPE HATCH: to bypass this hook for a single commit, run:
+#       git commit --no-verify
+#
+# Install with: scripts/install-git-hooks.sh  (hooks are opt-in per clone).
+
+set -u
+
+# --- locate repo root (works regardless of cwd) -----------------------------
+REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || {
+  echo "pre-commit: not inside a git work tree" >&2
+  exit 1
+}
+cd "$REPO_ROOT" || exit 1
+
+# --- TTY-aware colors --------------------------------------------------------
+if [ -t 1 ]; then
+  C_RED='\033[0;31m'; C_GREEN='\033[0;32m'; C_YELLOW='\033[1;33m'
+  C_BOLD='\033[1m'; C_NC='\033[0m'
+else
+  C_RED=''; C_GREEN=''; C_YELLOW=''; C_BOLD=''; C_NC=''
+fi
+
+info() { printf "${C_BOLD}[pre-commit]${C_NC} %s\n" "$*"; }
+pass() { printf "${C_GREEN}[pre-commit] PASS${C_NC} %s\n" "$*"; }
+warn() { printf "${C_YELLOW}[pre-commit] SKIP${C_NC} %s\n" "$*"; }
+fail() { printf "${C_RED}[pre-commit] FAIL${C_NC} %s\n" "$*" >&2; }
+
+FAILED=0
+
+# --- collect staged files (Added / Copied / Modified) ------------------------
+# NUL-safe read to tolerate exotic paths.
+STAGED_FILES=()
+while IFS= read -r -d '' f; do
+  STAGED_FILES+=("$f")
+done < <(git diff --cached --name-only --diff-filter=ACM -z)
+
+if [ "${#STAGED_FILES[@]}" -eq 0 ]; then
+  info "no staged files; nothing to check."
+  exit 0
+fi
+
+# ============================================================================
+# 1. SECRET / ENV-FILE GUARD
+#    Reject any staged file whose basename matches `.env` and does NOT end in
+#    `.example`.  e.g. .env, .env.local, .env.production  -> blocked
+#         .env.example, foo.env.example                  -> allowed
+# These are gitignored already; this is a belt-and-suspenders safety net.
+# ============================================================================
+ENV_HITS=()
+for f in "${STAGED_FILES[@]}"; do
+  base="$(basename "$f")"
+  case "$base" in
+    *.example) : ;;                       # explicitly allowed templates
+    .env|.env.*) ENV_HITS+=("$f") ;;      # .env, .env.local, .env.production ...
+  esac
+done
+if [ "${#ENV_HITS[@]}" -gt 0 ]; then
+  fail "refusing to commit environment / secret files:"
+  for f in "${ENV_HITS[@]}"; do printf '         - %s\n' "$f" >&2; done
+  printf '         These usually contain secrets and are gitignored.\n' >&2
+  printf '         Commit a redacted *.env.example instead.\n' >&2
+  FAILED=1
+fi
+
+# ============================================================================
+# 2. GO CHECKS — gofmt (blocking) + go vet (best-effort)
+# ============================================================================
+GO_FILES=()
+for f in "${STAGED_FILES[@]}"; do
+  case "$f" in
+    *.go) [ -f "$f" ] && GO_FILES+=("$f") ;;
+  esac
+done
+
+if [ "${#GO_FILES[@]}" -gt 0 ]; then
+  if command -v gofmt >/dev/null 2>&1; then
+    # gofmt -l prints the names of files that are NOT correctly formatted.
+    UNFORMATTED="$(gofmt -l "${GO_FILES[@]}" 2>/dev/null)"
+    if [ -n "$UNFORMATTED" ]; then
+      fail "the following Go files are not gofmt-formatted:"
+      printf '%s\n' "$UNFORMATTED" | while IFS= read -r u; do
+        [ -n "$u" ] && printf '         - %s\n' "$u" >&2
+      done
+      printf '         Fix with:  gofmt -w <file>   (or: gofmt -w .)\n' >&2
+      FAILED=1
+    else
+      pass "gofmt: ${#GO_FILES[@]} staged Go file(s) correctly formatted."
+    fi
+  else
+    warn "gofmt not found — skipping Go format check."
+  fi
+
+  # go vet (best-effort): never block the commit on its outcome, and skip if
+  # the go toolchain is absent. `go vet` must run from inside the Go module, so
+  # for each staged file we walk up to its nearest go.mod and vet the package
+  # dir relative to that module root. This is what makes vet work in a monorepo
+  # where go.mod lives in a subdir (e.g. backend/) rather than the repo root.
+  if command -v go >/dev/null 2>&1; then
+    # Build a set of "<module-dir>\t<relative-package-dir>" entries, deduped.
+    VET_TARGETS=()
+    for f in "${GO_FILES[@]}"; do
+      pkgdir="$(dirname "$f")"
+      # Find nearest ancestor (within the repo) containing go.mod.
+      moddir="$pkgdir"
+      while [ "$moddir" != "." ] && [ "$moddir" != "/" ] && [ ! -f "$moddir/go.mod" ]; do
+        moddir="$(dirname "$moddir")"
+      done
+      [ -f "$moddir/go.mod" ] || { [ -f "go.mod" ] && moddir="."; }
+      [ -f "$moddir/go.mod" ] || continue   # no module found; skip this file
+      # Package dir relative to the module root.
+      if [ "$moddir" = "." ]; then
+        rel="./$pkgdir"
+      else
+        rel="./${pkgdir#"$moddir"/}"
+      fi
+      entry="$moddir	$rel"
+      dup=0
+      if [ "${#VET_TARGETS[@]}" -gt 0 ]; then
+        for seen in "${VET_TARGETS[@]}"; do
+          [ "$seen" = "$entry" ] && { dup=1; break; }
+        done
+      fi
+      [ "$dup" -eq 0 ] && VET_TARGETS+=("$entry")
+    done
+
+    if [ "${#VET_TARGETS[@]}" -gt 0 ]; then
+      vet_ok=1
+      for entry in "${VET_TARGETS[@]}"; do
+        md="${entry%%	*}"; rel="${entry#*	}"
+        info "go vet (best-effort) in $md on $rel"
+        if ! ( cd "$md" && go vet "$rel" ) 2>&1; then
+          vet_ok=0
+        fi
+      done
+      if [ "$vet_ok" -eq 1 ]; then
+        pass "go vet clean."
+      else
+        warn "go vet reported issues (best-effort, NOT blocking the commit)."
+      fi
+    fi
+  else
+    warn "go not found — skipping go vet."
+  fi
+fi
+
+# ============================================================================
+# 3. TYPESCRIPT CHECKS — npx tsc --noEmit per affected app (best-effort)
+#    tsc is project-wide, so we type-check once per app, not per file.
+# ============================================================================
+check_ts_app() {
+  app="$1"
+  # Did any staged *.ts / *.tsx file land under this app dir?
+  hit=0
+  for f in "${STAGED_FILES[@]}"; do
+    case "$f" in
+      "$app"/*)
+        case "$f" in
+          *.ts|*.tsx) hit=1; break ;;
+        esac
+        ;;
+    esac
+  done
+  [ "$hit" -eq 1 ] || return 0
+
+  if [ ! -f "$app/tsconfig.json" ]; then
+    warn "$app: staged TS files but no $app/tsconfig.json — skipping tsc."
+    return 0
+  fi
+  if ! command -v npx >/dev/null 2>&1 || ! command -v node >/dev/null 2>&1; then
+    warn "$app: node/npx not found — skipping tsc type-check."
+    return 0
+  fi
+
+  info "$app: npx tsc --noEmit (type-checking whole app)..."
+  if ( cd "$app" && npx --no-install tsc --noEmit ) 2>&1; then
+    pass "$app: tsc type-check clean."
+  else
+    fail "$app: tsc --noEmit reported type errors (see above)."
+    FAILED=1
+  fi
+}
+
+# check_ts_app is a no-op when the app has no staged TS/TSX files.
+for app in frontend admin; do
+  check_ts_app "$app"
+done
+
+# ============================================================================
+# SUMMARY
+# ============================================================================
+echo
+if [ "$FAILED" -ne 0 ]; then
+  fail "commit blocked. Fix the issues above, or bypass with:  git commit --no-verify"
+  exit 1
+fi
+pass "all pre-commit checks passed."
+exit 0

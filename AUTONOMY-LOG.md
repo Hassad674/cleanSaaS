@@ -55,18 +55,18 @@ Foundation. A well-calibrated agent produces correct code; everything downstream
 - [x] **New skills:** `/run`, `/debug`, `/e2e`, `/verify-independence` created (frontmatter valid).
 - [~] Commit + create phase-1 branch (in progress).
 
-## Phase 1 — Mechanical enforcement (CI + hooks + gates)
+## Phase 1 — Mechanical enforcement (CI + hooks + gates)  — COMPLETE
 
-The leap toward the bar. Mostly additive (no app behavior change).
+The leap toward the bar. Mostly additive (no app behavior change). All self-verified locally.
 
-- [ ] golangci-lint config (`.golangci.yml`)
-- [ ] GitHub Actions: `ci.yml` (fast: go vet/lint/build/test -race + per-package coverage; node tsc/vitest/build), with `ci-gate` aggregate job + `concurrency` auto-cancel
-- [ ] GitHub Actions: `e2e.yml` (label-gated `run-e2e`, real Postgres container, Playwright)
-- [ ] Custom gate scripts in `scripts/ci/`: cross-feature import lint (backend+frontend), migration up/down pair check, no-hardcoded-colors check
-- [ ] Meta-tests for the gate scripts (prove they fail on violations and don't false-positive)
-- [ ] `.githooks/pre-commit` (zero-dep bash: gofmt + tsc + staged-only) + `scripts/install-git-hooks.sh` + meta-test
-- [ ] Dependabot config (grouped, ecosystem-aware)
-- [ ] Commit + create phase-2 branch.
+- [x] golangci-lint config (`backend/.golangci.yml`) — maps hard limits to funlen/gocyclo/cyclop/nestif/revive + SQL-correctness linters (bodyclose/rowserrcheck/sqlclosecheck). (golangci not installed locally → not run here; runs in CI.)
+- [x] GitHub Actions `ci.yml` — fast: backend (build/vet/golangci/test -race + coverage floor 50%), frontend (tsc/vitest/build), admin (tsc/build), gates job, `ci-gate` aggregate (`if: always()`), concurrency auto-cancel, `permissions: contents: read`. YAML validated.
+- [x] GitHub Actions `e2e.yml` — label-gated `run-e2e` + push-to-main, Postgres 16 service, migrate+seed, backend+frontend boot, Playwright, artifact upload. YAML validated.
+- [x] Custom gate scripts `scripts/ci/`: cross-feature-imports (backend app/adapter + domain purity + frontend features), migration-pairs, hardcoded-colors, file-length (>600, demos warn-only), forbidden-names (conservative). `run-all.sh` exits 0 on clean repo (5/5).
+- [x] Meta-tests `scripts/ci/__tests__/` — 5/5 pass (inject violation → gate fails; clean → passes). Verified independently.
+- [x] `.githooks/pre-commit` (zero-dep bash: secret-guard + gofmt + best-effort go vet/tsc, staged-only, degrades gracefully) + `scripts/install-git-hooks.sh` + `scripts/test-pre-commit.sh` (7/7 pass). Hook INSTALLED in this clone (dogfooding).
+- [x] Dependabot config (`.github/dependabot.yml`) — gomod/npm×2/actions, grouped, React/Next/Tailwind majors split.
+- [~] Commit + create phase-2 branch (in progress).
 
 ## Phase 2 — Hygiene & modularity demo
 
