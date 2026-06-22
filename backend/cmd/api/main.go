@@ -10,17 +10,16 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/hassad/boilerplateSaaS/backend/internal/adapter/postgres"
-	"github.com/hassad/boilerplateSaaS/backend/internal/adapter/resend"
 	adaptgemini "github.com/hassad/boilerplateSaaS/backend/internal/adapter/gemini"
+	"github.com/hassad/boilerplateSaaS/backend/internal/adapter/postgres"
 	adaptr2 "github.com/hassad/boilerplateSaaS/backend/internal/adapter/r2"
+	"github.com/hassad/boilerplateSaaS/backend/internal/adapter/resend"
 	adaptstripe "github.com/hassad/boilerplateSaaS/backend/internal/adapter/stripe"
 	appai "github.com/hassad/boilerplateSaaS/backend/internal/app/ai"
 	appauth "github.com/hassad/boilerplateSaaS/backend/internal/app/auth"
 	appbilling "github.com/hassad/boilerplateSaaS/backend/internal/app/billing"
 	appblog "github.com/hassad/boilerplateSaaS/backend/internal/app/blog"
 	appnotif "github.com/hassad/boilerplateSaaS/backend/internal/app/notification"
-	appreferral "github.com/hassad/boilerplateSaaS/backend/internal/app/referral"
 	appstorage "github.com/hassad/boilerplateSaaS/backend/internal/app/storage"
 	appteam "github.com/hassad/boilerplateSaaS/backend/internal/app/team"
 	appuser "github.com/hassad/boilerplateSaaS/backend/internal/app/user"
@@ -108,10 +107,6 @@ func main() {
 	blogRepo := postgres.NewBlogRepository(db)
 	blogSvc := appblog.NewService(blogRepo)
 
-	// Referral
-	referralRepo := postgres.NewReferralRepository(db)
-	referralSvc := appreferral.NewService(referralRepo)
-
 	// Teams (optional)
 	teamRepo := postgres.NewTeamRepository(db)
 	memberRepo := postgres.NewTeamMemberRepository(db)
@@ -122,7 +117,7 @@ func main() {
 	userSvc := appuser.NewService(userRepo)
 
 	// Router
-	router := handler.NewRouter(authSvc, userSvc, billingSvc, storageSvc, aiSvc, notifSvc, blogSvc, referralSvc, teamSvc, wsHub, cfg.JWTSecret, cfg.FrontendURL, db, logger, demoAI)
+	router := handler.NewRouter(authSvc, userSvc, billingSvc, storageSvc, aiSvc, notifSvc, blogSvc, teamSvc, wsHub, cfg.JWTSecret, cfg.FrontendURL, db, logger, demoAI)
 
 	// HTTP server
 	srv := &http.Server{

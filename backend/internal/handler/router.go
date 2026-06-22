@@ -15,7 +15,6 @@ import (
 	appbilling "github.com/hassad/boilerplateSaaS/backend/internal/app/billing"
 	appblog "github.com/hassad/boilerplateSaaS/backend/internal/app/blog"
 	appnotif "github.com/hassad/boilerplateSaaS/backend/internal/app/notification"
-	appreferral "github.com/hassad/boilerplateSaaS/backend/internal/app/referral"
 	appstorage "github.com/hassad/boilerplateSaaS/backend/internal/app/storage"
 	appteam "github.com/hassad/boilerplateSaaS/backend/internal/app/team"
 	"github.com/hassad/boilerplateSaaS/backend/internal/app/user"
@@ -35,7 +34,6 @@ func NewRouter(
 	aiSvc *appai.Service,
 	notifSvc *appnotif.Service,
 	blogSvc *appblog.Service,
-	referralSvc *appreferral.Service,
 	teamSvc *appteam.Service,
 	wsHub *ws.Hub,
 	jwtSecret string,
@@ -47,8 +45,8 @@ func NewRouter(
 	r := chi.NewRouter()
 
 	// Rate limiters
-	apiLimiter := middleware.NewRateLimiter(100)  // 100 req/min for API
-	authLimiter := middleware.NewRateLimiter(10)   // 10 req/min for auth
+	apiLimiter := middleware.NewRateLimiter(100) // 100 req/min for API
+	authLimiter := middleware.NewRateLimiter(10) // 10 req/min for auth
 
 	// Global middleware
 	r.Use(middleware.StructuredLogging(logger))
@@ -56,7 +54,7 @@ func NewRouter(
 	r.Use(chimw.RealIP)
 	r.Use(middleware.SecurityHeaders)
 	r.Use(middleware.CORS(frontendURL))
-	r.Use(middleware.MaxBodySize(1<<20)) // 1MB default for JSON endpoints
+	r.Use(middleware.MaxBodySize(1 << 20)) // 1MB default for JSON endpoints
 	r.Use(middleware.RateLimit(apiLimiter))
 
 	// Health check
@@ -118,7 +116,7 @@ func NewRouter(
 		demoStorageLimiter := middleware.NewRateLimiter(20) // 20 req/min for demo
 		r.Route("/demo/storage", func(r chi.Router) {
 			r.Use(middleware.RateLimit(demoStorageLimiter))
-			r.With(middleware.MaxBodySize(10 << 20)).Post("/upload", demoStorageHandler.Upload)
+			r.With(middleware.MaxBodySize(10<<20)).Post("/upload", demoStorageHandler.Upload)
 			r.Get("/files", demoStorageHandler.List)
 			r.Delete("/files/{id}", demoStorageHandler.Delete)
 		})
@@ -151,7 +149,7 @@ func NewRouter(
 		// Storage (authenticated)
 		if storageSvc != nil {
 			storageHandler := NewStorageHandler(storageSvc)
-			r.With(middleware.MaxBodySize(50 << 20)).Post("/files/upload", storageHandler.Upload)
+			r.With(middleware.MaxBodySize(50<<20)).Post("/files/upload", storageHandler.Upload)
 			r.Get("/files", storageHandler.List)
 			r.Delete("/files/{id}", storageHandler.Delete)
 		}
@@ -172,15 +170,6 @@ func NewRouter(
 			r.Post("/ai/conversations/{id}/messages", aiHandler.SendMessage)
 			r.Post("/ai/conversations/{id}/stream", aiHandler.StreamMessage)
 			r.Delete("/ai/conversations/{id}", aiHandler.DeleteConversation)
-		}
-
-		// Referral (optional — only if referral service is provided)
-		if referralSvc != nil {
-			referralHandler := NewReferralHandler(referralSvc)
-			r.Get("/referral/code", referralHandler.GetCode)
-			r.Get("/referral/stats", referralHandler.GetStats)
-			r.Get("/referral/list", referralHandler.List)
-			r.Post("/referral/apply", referralHandler.Apply)
 		}
 
 		// Teams (optional — only if team service is provided)
