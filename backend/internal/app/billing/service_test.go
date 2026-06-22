@@ -138,6 +138,7 @@ type mockPaymentSvc struct {
 	createPortalFn         func(ctx context.Context, customerID, returnURL string) (string, error)
 	cancelSubFn            func(ctx context.Context, subscriptionID string) error
 	handleWebhookFn        func(payload []byte, signature string) (*service.PaymentEvent, error)
+	retrieveSessionFn      func(ctx context.Context, sessionID string) (*service.CheckoutSessionInfo, error)
 }
 
 func (m *mockPaymentSvc) CreateCustomer(ctx context.Context, email, name string) (string, error) {
@@ -181,6 +182,12 @@ func (m *mockPaymentSvc) HandleWebhook(payload []byte, signature string) (*servi
 		return m.handleWebhookFn(payload, signature)
 	}
 	return nil, nil
+}
+func (m *mockPaymentSvc) RetrieveCheckoutSession(ctx context.Context, sessionID string) (*service.CheckoutSessionInfo, error) {
+	if m.retrieveSessionFn != nil {
+		return m.retrieveSessionFn(ctx, sessionID)
+	}
+	return &service.CheckoutSessionInfo{}, nil
 }
 
 // Tests
