@@ -35,10 +35,11 @@ AI-generated code to stay maintainable/performant/secure, usable by beginners AN
 
 ## Current state
 
-- **Active phase:** 0 — Calibration
+- **Active phase:** 0 — Calibration (COMPLETE, committing)
 - **Active branch:** `phase-0-calibration`
 - **Baseline:** GREEN (backend build+tests ok after fixing a pre-existing mock bug; tsc ok; vitest 25/25).
-- **Last action:** created tracking file + branch.
+- **Last action:** finished calibration (memory, skills, CLAUDE.md). Committing phase 0, then opening phase 1.
+- **Extra bugs found (to fix in phase 2 docs/hygiene):** Playwright config baseURL :3006 vs dev :3010; e2e specs log in as `admin@cleansaas.com` but seed creates `admin@cleansaas.dev`.
 
 ---
 
@@ -48,21 +49,11 @@ Foundation. A well-calibrated agent produces correct code; everything downstream
 
 - [x] Establish green baseline (fixed `mockPaymentSvc.RetrieveCheckoutSession` missing method)
 - [x] Create AUTONOMY-LOG.md + branch strategy
-- [ ] **Memory sanitation** — split machine-personal (gitignored) from boilerplate-public memory.
-  - [ ] Remove sudo/personal/language lines from published memory
-  - [ ] Add module map (core vs optional + which env key gates each: billing→STRIPE_SECRET_KEY, storage→R2_*, ai→GEMINI_API_KEY)
-  - [ ] Add ports + seeded admin creds + architecture invariants
-  - [ ] Fix "mobile decided against" contradiction (will be true after phase 2)
-- [ ] **Fix existing skills** (8): replace stale `/home/hassad/Documents/boilerplateSaaS` paths with relative/`$CLAUDE_PROJECT_DIR`; fix `test` skill (Jest→Vitest, add Playwright).
-- [ ] **Upgrade CLAUDE.md** (root + backend + frontend + admin):
-  - [ ] Fix broken refs (BLOCKED.md, TACHES.md section numbers)
-  - [ ] Add hard numeric limits (600 lines/file, 50/func, 4 params, depth 3, cyclomatic <10)
-  - [ ] Add runtime/observability section (run app, read logs, reproduce bug)
-  - [ ] Fix version drift (Next 16 not 15)
-  - [ ] Point Compact-instructions at AUTONOMY-LOG.md
-  - [ ] Beef up admin/CLAUDE.md (add testing section)
-- [ ] **New skills:** `/run`, `/debug` (beginner screenshot+Chrome-ext flow), `/e2e`, `/verify-independence`.
-- [ ] Commit + create phase-1 branch.
+- [x] **Memory sanitation** — MEMORY.md rewritten (removed sudo/personal/language lines; added module map + env-gating, ports, seeded creds, architecture invariants, skills index); architecture.md corrected to reality (adapters gemini/postgres/r2/resend/stripe; all features listed).
+- [x] **Fix existing skills** (8): stale paths removed (0 left); `test` skill rewritten (Vitest + Playwright, no Jest).
+- [x] **Upgrade CLAUDE.md** (root + admin): broken refs fixed (BLOCKED.md, TACHES.md §0.3/§1.4); hard numeric limits added; runtime/observability section added; Next 16 not 15; Compact-instructions point at AUTONOMY-LOG.md; skills table updated with /run /debug /e2e /verify-independence; admin/CLAUDE.md testing section added.
+- [x] **New skills:** `/run`, `/debug`, `/e2e`, `/verify-independence` created (frontmatter valid).
+- [~] Commit + create phase-1 branch (in progress).
 
 ## Phase 1 — Mechanical enforcement (CI + hooks + gates)
 

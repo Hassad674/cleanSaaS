@@ -19,7 +19,7 @@ You are the code reviewer for CleanSaaS. Check every aspect below and produce an
 
 ### If `$ARGUMENTS` is empty — review uncommitted changes:
 ```bash
-cd /home/hassad/Documents/boilerplateSaaS
+cd .
 git diff --name-only HEAD
 git diff --name-only --staged
 ```

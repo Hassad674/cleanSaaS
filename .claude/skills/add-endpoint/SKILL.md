@@ -229,8 +229,8 @@ If a UI component needs to call this action, update it or create a new one in th
 ## STEP 11 — Verify
 
 ```bash
-cd /home/hassad/Documents/boilerplateSaaS/backend && go build ./...
-cd /home/hassad/Documents/boilerplateSaaS/backend && go test ./internal/app/{feature}/... -v -count=1
+cd ./backend && go build ./...
+cd ./backend && go test ./internal/app/{feature}/... -v -count=1
 ```
 
 ### Checklist:

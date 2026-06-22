@@ -53,17 +53,18 @@ Before merging any feature, mentally test: "If I delete this feature's entire fo
 
 ```
 cleanSaaS/
-├── frontend/          → Next.js 15, Tailwind, feature-based (see frontend/CLAUDE.md)
-├── backend/           → Go + Chi, hexagonal architecture (see backend/CLAUDE.md)
+├── frontend/          → Next.js 16, Tailwind v4, feature-based (see frontend/CLAUDE.md)
+├── backend/           → Go 1.25 + Chi, hexagonal architecture (see backend/CLAUDE.md)
 │   └── migrations/    → SQL migration files (up/down)
 ├── admin/             → Vite + React + Tailwind, admin dashboard (see admin/CLAUDE.md)
-├── .claude/skills/    → Custom Claude Code skills
+├── .claude/skills/    → Custom Claude Code skills (/run, /debug, /add-feature, …)
+├── .claude/memory/    → Project memory (MEMORY.md, architecture.md)
 ├── docker-compose.yml → PostgreSQL + DbGate (local DB viewer)
-├── BLOCKED.md         → Documented blockers (features skipped due to persistent issues)
 └── CLAUDE.md          → This file
 ```
 
 Each major directory has its own CLAUDE.md with specific conventions.
+Blockers, when they happen, are logged in `BLOCKED-<topic>.md` at the repo root (see Blocker policy below) — none exist in a healthy clone.
 
 ## Development principles
 
@@ -71,6 +72,16 @@ Each major directory has its own CLAUDE.md with specific conventions.
 - Write tests FIRST or alongside code, never after
 - Tests are how AI agents self-correct — they run tests, see failures, and fix autonomously
 - Target: 80%+ coverage on business logic layers
+
+### Code quality limits (hard — these are non-negotiable, not guidelines)
+These caps keep files in an agent's context window and force single-responsibility. If you're about to exceed one, that's the signal to split — extract a function, a type, or a file.
+- **≤ 600 lines per file.** Over that, the file is doing too much — split by responsibility.
+- **≤ 50 lines per function.** Over that, extract helpers.
+- **≤ 4 parameters per function/constructor.** More → pass a struct (e.g. a `Deps`/`Params` struct). The composition root may use a typed `Deps` struct rather than 16 positional args.
+- **≤ 3 levels of nesting.** Deeper → use early returns / guard clauses.
+- **Cyclomatic complexity < 10 per function.** Higher → break the branching apart.
+- **Forbidden indescriptive names:** `data`, `info`, `tmp`, `temp`, `manager`, `util`/`utils`, `helper`/`helpers`, `handler2`, `doStuff`. Every name states what it is.
+These are enforced in CI (golangci-lint + the gate scripts in `scripts/ci/`), not just trusted.
 
 ### SOLID principles
 - **S**: One file, one responsibility. One function, one job.
@@ -153,14 +164,18 @@ Use these slash commands to accelerate development:
 
 | Situation | Skill | Example |
 |-----------|-------|---------|
+| Start the whole stack locally | `/run` | `/run` |
+| Reproduce & fix a bug (guided) | `/debug` | `/debug login button does nothing` |
 | New full-stack module | `/add-feature` | `/add-feature billing with plans and subscriptions` |
 | New endpoint on existing feature | `/add-endpoint` | `/add-endpoint reset-password on auth` |
 | New/swap external provider | `/add-adapter` | `/add-adapter lemonsqueezy for payment` |
 | New database table or column | `/add-migration` | `/add-migration create subscriptions table` |
 | Remove a module cleanly | `/remove-feature` | `/remove-feature billing` |
+| Prove a module is removable (no mutation) | `/verify-independence` | `/verify-independence referral` |
 | Verify architecture rules | `/check` | `/check` or `/check billing` |
 | Code review before commit | `/review` | `/review` or `/review auth` |
 | Run tests intelligently | `/test` | `/test auth` or `/test changed` |
+| Run the Playwright e2e suite | `/e2e` | `/e2e` or `/e2e auth` |
 
 Skills are auto-detected: describing what you want is enough. You don't have to type the slash command explicitly.
 
@@ -170,7 +185,16 @@ Skills are auto-detected: describing what you want is enough. You don't have to 
 - **Backend**: Go `testing` package + `github.com/stretchr/testify` (assertions, mocks)
 - **Frontend unit**: `vitest` + `@testing-library/react` + `@testing-library/jest-dom`
 - **Frontend E2E**: `playwright` (chromium) — tests in `frontend/e2e/`
-- All must be installed before starting work (see TACHES.md section 0.3)
+- All are already declared in the respective `package.json` / `go.mod`. Install with `go mod download`, `npm install`, and `npx playwright install --with-deps chromium` for e2e.
+
+### Running & observing the app (don't only compile + unit-test — run it)
+Compiling and unit-testing is not enough; many bugs only show up at runtime. Know how to start the stack, read its logs, and reproduce behavior.
+- **Start everything:** use the `/run` skill (DB → migrate → seed → backend :8081 → frontend :3010 → admin :5174, with smoke tests). Or manually: `docker compose up -d` → `cd backend && make migrate-up && make seed && make run` → `cd frontend && npm run dev`.
+- **Ports:** backend **:8081** · frontend **:3010** · admin **:5174** · Postgres **:5433** · DbGate **:8082**. Seeded admin: `admin@cleansaas.dev` / `admin123`.
+- **Health:** `curl http://localhost:8081/health` → `{"status":"ok",...}` (200). Routes are mounted at **root** (`/auth/login`, not `/api/...`).
+- **Logs:** when started via `/run`, tailed to `/tmp/cleansaas-{backend,frontend,admin}.log`. Read them when something misbehaves — backend logs are structured JSON (`slog`).
+- **Inspect data:** DbGate at `http://localhost:8082` is a web UI on the local Postgres.
+- **Reproduce a bug / get unstuck:** use the `/debug` skill — it walks through screenshot intake, browser/Chrome-extension or `curl` reproduction, localization, a bug report, a failing test, the fix, and verification.
 
 ### Test → Fix → Retest loop (MANDATORY)
 
@@ -231,22 +255,22 @@ ALL steps must pass. If any fails → enter fix loop above → only commit when 
 
 **Type C — Compilation failure**: TOP PRIORITY, 10 min to fix → if unfixable, revert latest changes (`git checkout -- <files>`) → NEVER leave build broken
 
-See `TACHES.md` section 1.4 for the full detailed policy with decision table.
+When you hit a Type A/B blocker, log it in `BLOCKED-<topic>.md` at the repo root (error + every approach tried + suspected location) and note it in your active progress file.
 
 ## Compact instructions
 
 When compacting context, prioritize preserving:
-1. The current task being worked on (task number and sub-step)
+1. The current task being worked on (which phase / sub-step)
 2. Any errors or blockers encountered
 3. Files recently created or modified
 4. The test→fix→retest loop state (what's failing, what was tried)
 
 After compaction:
-1. Re-read `TACHES.md` to recover full task list and progress (checkboxes)
-2. Run `git log --oneline -10` to see what was already committed
-3. Run `cd backend && go build ./...` and `cd frontend && npx tsc --noEmit` to verify project compiles
-4. Check for `BLOCKED-*.md` files at project root
-5. Resume from first unchecked task in TACHES.md
+1. Re-read your active progress tracker if one exists (e.g. `AUTONOMY-LOG.md` at the repo root during a multi-phase work session) to recover the task list and checkboxes
+2. Run `git branch --show-current` and `git log --oneline -15` to see the active branch and what was already committed
+3. Run `cd backend && go build ./... && go test ./...` and `cd frontend && npx tsc --noEmit && npx vitest run` to confirm the baseline is green
+4. Check for `BLOCKED-*.md` files at the repo root
+5. Resume from the first unchecked item in the active tracker
 
 ## Environment variables
 

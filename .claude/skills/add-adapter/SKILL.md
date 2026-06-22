@@ -138,7 +138,7 @@ Only add config fields that don't already exist.
 
 If the provider has a Go SDK:
 ```bash
-cd /home/hassad/Documents/boilerplateSaaS/backend
+cd ./backend
 go get {sdk-package}
 go mod tidy
 ```
@@ -197,7 +197,7 @@ Create `backend/internal/adapter/{provider}/{category}_test.go`:
 ## STEP 7 — Verify
 
 ```bash
-cd /home/hassad/Documents/boilerplateSaaS/backend && go build ./...
+cd ./backend && go build ./...
 ```
 
 ### Verify the swap promise:

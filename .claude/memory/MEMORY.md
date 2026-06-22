@@ -1,46 +1,61 @@
 # CleanSaaS — Project Memory
 
-## Project Identity
-- Open-source SaaS boilerplate: Next.js + Go (Chi) + PostgreSQL (pure SQL)
-- Target: medium-to-large SaaS, NOT micro-SaaS
-- Goal: beat OpenSaaS (13K stars), aim 1-3K stars in 3 months
-- Philosophy: Claude Code as primary dev tool, natural language driven
+> This memory ships with the boilerplate. It must contain only facts useful to **anyone** who clones the
+> repo — architecture invariants, the module map, ports, conventions. It must **never** contain a
+> maintainer's machine config, secrets, OS/shell settings, or personal preferences. Put machine-local notes
+> in a gitignored file (e.g. `.claude/memory/local.md`), not here.
 
-## Architecture Decisions
-- **Backend**: Hexagonal architecture (domain → port → app → adapter → handler)
-- **Frontend**: Feature-based (not hexagonal — doesn't fit React/Next.js)
-- **DB**: Pure SQL, no ORM. Neon for prod, Docker PostgreSQL for local
-- **Mobile**: Decided against — backend API is decoupled, users add their own client
-- **Infra**: Vercel (frontend) + Railway (backend) + Neon (DB) + Cloudflare R2 (storage)
-- See [architecture.md](architecture.md) for detailed structure
+## Project identity
+- Open-source SaaS boilerplate for **medium-to-large** SaaS (not micro-SaaS).
+- Stack: **Next.js 16** (frontend) + **Go 1.25 / Chi** (backend) + **PostgreSQL 16** (pure SQL, no ORM) + **Tailwind v4**.
+- Prod infra targets: Vercel (frontend) · Railway (backend) · Neon (DB) · Cloudflare R2 (storage).
+- Core thesis: the product is the **enforcement system** (CLAUDE.md + memory + skills + CI + hooks) that keeps
+  AI-generated code maintainable/performant/secure — for beginners *and* pros.
 
-## Key Principles (non-negotiable)
-- TDD: tests first, AI agents self-correct via test results
-- SOLID + STUPID avoidance
-- Performance, security, scalability, maintainability, evolvability
-- No rigidity: adapters are swappable, features are isolated
-- AI-agent friendly: small files, explicit interfaces, consistent patterns
+## Architecture invariants (non-negotiable)
+- **Backend = hexagonal**, dependency rule: `handler → app → domain ← port ← adapter`.
+  - `domain/` imports stdlib only. `port/` imports domain only. `app/` imports domain + port (interfaces).
+    `adapter/` imports domain + port + external libs. An adapter never imports another adapter.
+- **Frontend = feature-based.** Features never import each other; composition happens only in `app/` pages.
+- **Every feature is fully removable**: delete its folder + its `cmd/api/main.go` wiring lines → everything
+  else still compiles. Only **auth + DB** are hard core. Verify with the `/check` and `/verify-independence` skills.
+- **No cross-feature foreign keys** — feature tables may only `REFERENCES users(id)`.
+- **Swap a provider in one line**: implement the `port/service` interface in a new `adapter/`, change one line in `main.go`.
 
-## Repo Structure
-```
-cleanSaaS/
-├── frontend/          → Next.js 15 + Tailwind + shadcn
-├── backend/           → Go + Chi (hexagonal)
-│   ├── cmd/api/       → Entry point
-│   ├── internal/      → domain/ port/ app/ adapter/ handler/
-│   └── pkg/           → jwt, hash, validate, pagination
-├── db/                → Shared SQL schema reference
-└── docker-compose.yml → PostgreSQL + DbGate (DB viewer)
-```
+## Module map (backend feature → optional? → env key that enables it)
+| Feature | Core? | Enabled by | External adapter |
+|---|---|---|---|
+| auth, user | **core** | always on | — |
+| billing | optional | `STRIPE_SECRET_KEY` | adapter/stripe |
+| storage | optional | `R2_ACCOUNT_ID` / `R2_*` | adapter/r2 |
+| ai | optional | `GEMINI_API_KEY` | adapter/gemini |
+| email (used by auth/notification) | optional | `RESEND_API_KEY` | adapter/resend |
+| notification, blog, team | optional | always on (DB only) | — |
+| referral | optional | always on (DB only) | — |
 
-## Infra Details
-- Local DB port: 5433 (not 5432, was already taken)
-- Backend default port: 8081 (not 8080, was already taken)
-- Neon connection requires removing `channel_binding=require` for lib/pq
-- GitHub repo: Hassad674/cleanSaaS
+If an optional key is empty, `cmd/api/main.go` skips wiring that feature (nil service) — the app still runs.
 
-## User Preferences
-- Language: French for conversation, English for code/docs
-- Ambitious scope — don't simplify or take easy routes
-- Wants professional, showcase-quality code
-- Sudoers NOPASSWD configured (temporary — remind to remove)
+## Ports & local facts
+- Backend API: **:8081** · Frontend: **:3010** · Admin (Vite): **:5174** · Postgres: **:5433** · DbGate UI: **:8082**
+- API routes are mounted at **root** (e.g. `POST /auth/login`), not under `/api`.
+- Seeded admin (via `make seed`): **admin@cleansaas.dev** / **admin123**.
+- Neon prod connection: drop `channel_binding=require` for `lib/pq` compatibility.
+- One-command local start: the `/run` skill (or `scripts/bootstrap.sh` then start the dev servers).
+
+## Conventions
+- Code/comments/docs in **English**. Conventional commits (`feat:`/`fix:`/`refactor:`/`chore:`/`test:`/`docs:`).
+- TDD: write tests alongside code; agents self-correct via the Test→Fix→Retest loop (see root `CLAUDE.md`).
+- Validation pipeline before every commit: `go build ./...` · `go test ./...` · `npx tsc --noEmit` · `npx vitest run` (+ Playwright when a flow changed).
+- Migrations: numbered `NNN_name.up.sql`/`.down.sql`, immutable once applied, idempotent (`IF [NOT] EXISTS`).
+
+## Skills (use these — `/<name>`)
+- `/run` — start the whole stack locally & smoke-test it.
+- `/debug` — guided, beginner-friendly reproduce→report→fix→verify (screenshot + Chrome extension + tests).
+- `/test`, `/e2e` — run Go/Vitest tests, run Playwright e2e.
+- `/add-feature`, `/add-endpoint`, `/add-adapter`, `/add-migration` — scaffolders (layer-correct, domain-first).
+- `/remove-feature`, `/verify-independence` — prove/perform clean module removal (the modularity promise).
+- `/check`, `/review` — architecture-independence audit & pre-commit code review.
+
+## Pointers
+- Detailed layer structure → [architecture.md](architecture.md)
+- Per-area conventions → `CLAUDE.md` (root), `backend/CLAUDE.md`, `frontend/CLAUDE.md`, `admin/CLAUDE.md`

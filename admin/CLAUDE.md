@@ -43,8 +43,17 @@ admin/src/
 ```bash
 cd admin
 npm run dev    # Starts on port 5174
-npm run build  # Production build
+npm run build  # Production build (tsc + vite)
 ```
+
+## Testing
+
+> Current state: the admin app has **no automated tests** yet — this is the least-mature surface of the boilerplate. Treat new admin work as test-debt-paying-down, not test-debt-adding.
+
+- **Unit/component**: add **Vitest** + `@testing-library/react` (same toolchain as the Next.js frontend). Co-locate `*.test.tsx` next to the component/page. Cover the `lib/api.ts` client (mock fetch), auth context, and protected-route redirects.
+- **Type check** (must pass before commit): `npx tsc --noEmit`.
+- **End-to-end**: admin flows are exercised via the frontend's Playwright setup where they overlap; admin-specific e2e can be added under a dedicated spec once flows stabilize.
+- Run the validation pipeline before committing admin changes: `npm run build` + `npx tsc --noEmit` (+ Vitest once tests exist).
 
 ## Environment Variables
 

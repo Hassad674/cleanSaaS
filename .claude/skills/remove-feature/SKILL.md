@@ -145,7 +145,7 @@ Delete in this order (dependencies first, dependents last):
 
 ### Backend
 ```bash
-cd /home/hassad/Documents/boilerplateSaaS/backend && go build ./...
+cd ./backend && go build ./...
 ```
 
 Fix any compilation errors. Common issues:
@@ -154,7 +154,7 @@ Fix any compilation errors. Common issues:
 
 ### Frontend
 ```bash
-cd /home/hassad/Documents/boilerplateSaaS/frontend && npx tsc --noEmit
+cd ./frontend && npx tsc --noEmit
 ```
 
 Fix any TypeScript errors. Common issues:
@@ -166,8 +166,8 @@ Fix any TypeScript errors. Common issues:
 ## STEP 6 — Run tests
 
 ```bash
-cd /home/hassad/Documents/boilerplateSaaS/backend && go test ./... -count=1
-cd /home/hassad/Documents/boilerplateSaaS/frontend && npm test 2>/dev/null || true
+cd ./backend && go test ./... -count=1
+cd ./frontend && npm test 2>/dev/null || true
 ```
 
 All remaining tests must pass. If a test outside this feature fails, there was a hidden dependency — fix it.

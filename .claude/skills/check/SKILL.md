@@ -30,7 +30,7 @@ Verify that files in `backend/internal/domain/` import ONLY:
 **How to check:**
 ```bash
 # Find any non-stdlib, non-domain imports in domain/
-cd /home/hassad/Documents/boilerplateSaaS
+cd .
 ```
 Use Grep to search for import statements in `backend/internal/domain/` and verify none reference `internal/port`, `internal/app`, `internal/adapter`, `internal/handler`, `internal/config`, or any external module.
 

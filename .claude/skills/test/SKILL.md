@@ -1,6 +1,6 @@
 ---
 name: test
-description: Intelligently run relevant tests based on changed files or a specified feature. Use to run tests for a feature, verify a fix, or run the full test suite.
+description: Intelligently run relevant tests based on changed files or a specified feature. Use to run tests for a feature, verify a fix, or run the full test suite (Go unit/integration, Vitest unit, Playwright e2e).
 user-invocable: true
 allowed-tools: Read, Bash, Grep, Glob, Agent
 ---
@@ -11,173 +11,168 @@ Target: **$ARGUMENTS**
 
 You are the test runner for CleanSaaS. Determine what to test, run it, analyze results, and fix failures.
 
+**Stack reality (use exactly):**
+- Backend: Go `testing` + `testify`. Run with `go test`. Integration tests are gated by `//go:build integration` and the `-tags=integration` flag (need Docker/Postgres).
+- Frontend unit: **Vitest** (`npx vitest run`) + Testing Library. Tests are co-located: `*.test.ts` / `*.test.tsx`. **There is no Jest** — never call `jest`.
+- Frontend e2e: **Playwright** (`npx playwright test`), specs in `frontend/e2e/`. Needs backend :8081 + frontend :3010 running and the DB seeded.
+- Always use relative paths from repo root, or `$CLAUDE_PROJECT_DIR`. Never absolute user paths.
+
 ---
 
 ## STEP 1 — Determine test scope
 
 Based on `$ARGUMENTS`, determine what to test:
 
-### If `$ARGUMENTS` is empty or "all":
-Run the full test suite for both backend and frontend.
-
-### If `$ARGUMENTS` is a feature name (e.g., "auth", "billing", "ai"):
-Run tests for that specific feature across backend and frontend.
-
-### If `$ARGUMENTS` is "backend" or "frontend":
-Run the full test suite for that side only.
-
-### If `$ARGUMENTS` is "changed" or "diff":
-Use git to detect changed files and run only relevant tests:
-```bash
-git diff --name-only HEAD
-git diff --name-only --staged
-```
-Map changed files to their test files and related test suites.
-
-### If `$ARGUMENTS` is a file path:
-Run the test file closest to that path.
+- **empty / "all"** → full suite, backend + frontend.
+- **a feature name** (e.g. `auth`, `billing`, `ai`) → tests for that feature across backend + frontend.
+- **"backend" / "frontend"** → that side only.
+- **"e2e"** → the Playwright suite only (see STEP 5).
+- **"changed" / "diff"** → detect changed files and run only relevant tests:
+  ```bash
+  git diff --name-only HEAD
+  git diff --name-only --staged
+  ```
+  Map each changed file to its test(s): a `*.go` file → its `_test.go` package; a `features/<f>/...` file → that feature's Vitest tests and any e2e flow that touches it.
+- **a file path** → the test file closest to that path.
 
 ---
 
 ## STEP 2 — Discover test files
 
-### Backend test discovery
-
-For a feature named `{feature}`:
+### Backend (for a feature `{feature}`)
 ```
-backend/internal/domain/{feature}/*_test.go    → Domain tests
-backend/internal/app/{feature}/*_test.go       → Service tests (unit)
-backend/internal/adapter/postgres/{feature}_test.go → Integration tests
-backend/internal/handler/{feature}_test.go     → Handler tests
-backend/pkg/**/*_test.go                       → Utility tests
+backend/internal/domain/{feature}/*_test.go        → Domain tests (unit)
+backend/internal/app/{feature}/*_test.go           → Service tests (unit, mocked ports)
+backend/internal/adapter/postgres/{feature}_test.go → Integration tests (build tag: integration)
+backend/internal/handler/{feature}_test.go         → Handler tests
+backend/pkg/**/*_test.go                            → Utility tests
 ```
 
-List which test files exist and which are missing.
-
-### Frontend test discovery
-
-For a feature named `{feature}`:
+### Frontend (for a feature `{feature}`)
 ```
-frontend/src/features/{feature}/**/*.test.ts    → Unit tests
-frontend/src/features/{feature}/**/*.test.tsx   → Component tests
+frontend/src/features/{feature}/**/*.test.ts        → Unit tests (Vitest)
+frontend/src/features/{feature}/**/*.test.tsx       → Component tests (Vitest + Testing Library)
+frontend/e2e/*.spec.ts                              → End-to-end flows (Playwright)
 ```
 
-List which test files exist and which are missing.
+List which test files exist and which are **missing** (see "Missing tests" in the report).
 
 ---
 
 ## STEP 3 — Run backend tests
 
-### Unit tests (for a specific feature):
+### Unit tests for a feature:
 ```bash
-cd /home/hassad/Documents/boilerplateSaaS/backend
-go test ./internal/domain/{feature}/... -v -count=1
-go test ./internal/app/{feature}/... -v -count=1
+cd backend
+go test ./internal/domain/{feature}/... ./internal/app/{feature}/... -count=1 -v
 ```
 
 ### All backend unit tests:
 ```bash
-cd /home/hassad/Documents/boilerplateSaaS/backend
-go test ./internal/domain/... ./internal/app/... ./pkg/... -v -count=1
+cd backend
+go test ./internal/domain/... ./internal/app/... ./pkg/... -count=1
 ```
 
-### Integration tests (if Docker is running):
+### Integration tests (need Docker + Postgres on :5433):
 ```bash
-cd /home/hassad/Documents/boilerplateSaaS/backend
-go test ./internal/adapter/... -v -count=1 -tags=integration
+cd backend
+go test ./internal/adapter/... -tags=integration -count=1
 ```
 
-### Full backend:
+### Full backend (everything):
 ```bash
-cd /home/hassad/Documents/boilerplateSaaS/backend
-go test ./... -v -count=1
+cd backend
+go test ./... -count=1
 ```
 
-**Important flags:**
-- `-v` for verbose output
-- `-count=1` to disable test caching
-- `-race` to detect race conditions (add for CI, skip for quick local runs)
-- `-timeout 30s` to prevent hanging tests
+**Useful flags:** `-count=1` (disable cache), `-race` (race detector — always in CI, optional locally), `-timeout 60s`, `-run '<TestName>'` to run a single test.
 
 ---
 
-## STEP 4 — Run frontend tests
+## STEP 4 — Run frontend unit tests (Vitest)
 
 ### Specific feature:
 ```bash
-cd /home/hassad/Documents/boilerplateSaaS/frontend
-npx jest --testPathPattern="features/{feature}" --verbose 2>/dev/null || npm test -- --testPathPattern="features/{feature}" --verbose
+cd frontend
+npx vitest run src/features/{feature}
 ```
 
-### All frontend:
+### A single test by name:
 ```bash
-cd /home/hassad/Documents/boilerplateSaaS/frontend
-npm test -- --verbose
+cd frontend
+npx vitest run -t "<test name>"
 ```
 
-### Type checking (always run alongside tests):
+### All frontend unit tests:
 ```bash
-cd /home/hassad/Documents/boilerplateSaaS/frontend
+cd frontend
+npx vitest run
+```
+
+### Type checking (always run alongside tests — a passing suite that doesn't typecheck is still broken):
+```bash
+cd frontend
 npx tsc --noEmit
 ```
 
 ---
 
-## STEP 5 — Analyze results
+## STEP 5 — Run end-to-end tests (Playwright)
 
-For each test run, parse the output and categorize:
-
-### PASSED tests
-List count and summary.
-
-### FAILED tests
-For each failure:
-1. **Test name** — Full test function/describe name
-2. **File location** — Exact file and line
-3. **Error message** — The actual vs expected or panic message
-4. **Root cause analysis** — Read the test file AND the source file to understand why it failed
-
-### SKIPPED tests
-List and note why (missing dependencies, build tags, etc.)
-
-### MISSING tests
-List files that SHOULD have tests but don't:
-- Every `entity.go` in domain/ needs `entity_test.go`
-- Every `service.go` in app/ needs `service_test.go`
-- Key frontend components should have `.test.tsx`
-
----
-
-## STEP 6 — Fix failures (if requested or obvious)
-
-If the user included "fix" in `$ARGUMENTS`, or if failures are due to obvious issues:
-
-### For Go test failures:
-1. Read the failing test and the source code
-2. Determine if the bug is in the test or the implementation
-3. Fix the actual bug (prefer fixing implementation over adjusting tests, unless the test expectation is wrong)
-4. Re-run the specific test to verify the fix
-5. Run the full feature test suite to check for regressions
-
-### For TypeScript/React test failures:
-1. Read the test file and component
-2. Check for type mismatches, missing props, incorrect assertions
-3. Fix and re-run
-
-### Do NOT:
-- Skip or delete failing tests to make the suite pass
-- Change test assertions to match buggy behavior
-- Add `t.Skip()` or `.skip()` without a clear reason
-
----
-
-## STEP 7 — Compilation check
-
-Always verify compilation even if tests pass:
+Only when `$ARGUMENTS` is "e2e"/"all", or the change affects a user flow. E2E needs the stack **running** (backend :8081, frontend :3010) and the DB **seeded** (so login works). If it isn't up, run the `/run` skill first, or delegate to the `/e2e` skill which handles all the preflight.
 
 ```bash
-cd /home/hassad/Documents/boilerplateSaaS/backend && go build ./...
-cd /home/hassad/Documents/boilerplateSaaS/frontend && npx tsc --noEmit
+cd frontend
+npx playwright install --with-deps chromium   # first run only
+npx playwright test                            # whole suite
+npx playwright test e2e/<file>.spec.ts         # one spec
+npx playwright show-report                     # open the last HTML report
+```
+
+> Known config gotchas to check/fix if e2e fails immediately: the Playwright `baseURL`/port must match the dev server (**:3010**), and specs must log in with the seeded account **admin@cleansaas.dev / admin123**. A `:3006` baseURL or a `@cleansaas.com` login is a config bug, not a product bug.
+
+---
+
+## STEP 6 — Analyze results
+
+For each run, categorize:
+
+### PASSED — count + summary.
+### FAILED — for each: **test name**, **file:line**, **actual vs expected / panic message**, and **root-cause analysis** (read BOTH the test and the source to explain why).
+### SKIPPED — list and why (build tags, missing deps).
+### MISSING — files that SHOULD have tests but don't:
+- every `entity.go` in domain/ → `entity_test.go`
+- every `service.go` in app/ → `service_test.go`
+- key frontend components/hooks → a `.test.tsx`/`.test.ts`
+
+---
+
+## STEP 7 — Fix failures (if "fix" in $ARGUMENTS or the cause is obvious)
+
+### Go failures:
+1. Read the failing test and the source.
+2. Decide whether the bug is in the test or the implementation (prefer fixing the implementation, unless the expectation is genuinely wrong).
+3. Fix → re-run just that test (`-run '<TestName>'`) → then re-run the feature suite for regressions.
+
+### TypeScript / React (Vitest) failures:
+1. Read the test and the component/hook.
+2. Check type mismatches, missing props, wrong assertions, unmocked fetch/server-action.
+3. Fix → re-run (`-t "<name>"`).
+
+Follow `CLAUDE.md`'s **Test → Fix → Retest loop** (max 3 attempts per failing test) and **Blocker policy** (stuck on the same error after 3 genuinely different approaches → write `BLOCKED-<topic>.md`).
+
+### Never:
+- Skip or delete a failing test to make the suite pass.
+- Change assertions to match buggy behavior.
+- Add `t.Skip()` / `.skip()` without a clear, stated reason.
+
+---
+
+## STEP 8 — Compilation check (always, even if tests pass)
+
+```bash
+cd backend  && go build ./...
+cd frontend && npx tsc --noEmit
 ```
 
 A passing test suite with compilation errors means something is broken.
@@ -190,24 +185,22 @@ A passing test suite with compilation errors means something is broken.
 # Test Report — {target}
 
 ## Summary
-- Backend: X passed, Y failed, Z skipped
-- Frontend: X passed, Y failed, Z skipped
+- Backend:  X passed, Y failed, Z skipped   (unit / integration)
+- Frontend: X passed, Y failed, Z skipped   (Vitest)
+- E2E:      X passed, Y failed              (Playwright, if run)
 - Compilation: backend OK / frontend OK
 
 ## Failures
-
 ### [FAIL] TestAuthService_Register_DuplicateEmail
 - File: backend/internal/app/auth/service_test.go:45
 - Error: expected ErrAlreadyExists, got ErrInternal
-- Cause: FindByEmail returns wrong error when user exists
+- Cause: FindByEmail returns the wrong error when the user exists
 - Fix: (applied / suggested)
 
 ## Missing tests
-
-- backend/internal/domain/billing/entity_test.go — NO TESTS
-- backend/internal/app/ai/service_test.go — NO TESTS
+- backend/internal/domain/billing/invoice_test.go — NO TESTS
+- frontend/src/features/team/... — feature layer has no unit tests
 
 ## Recommendations
-- Add domain validation tests for billing entity
-- Add service-level tests for AI feature with mocked repository
+- <highest-value test to add next>
 ```
