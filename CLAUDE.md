@@ -23,6 +23,7 @@ This boilerplate is built so that **any** user — a seasoned engineer or a non-
 | "it's broken / this doesn't work / <screenshot>" | Use **`/debug`** (guided reproduce → bug report → failing test → fix → verify). |
 | "run it / start the app / does it work?" | Use **`/run`**, then smoke-test. |
 | "is this correct / review this" | Use **`/check`** (architecture) and **`/review`** (quality/security). |
+| "build the whole X" / "do everything" / "while I'm away" / big multi-step or cross-codebase work | Use the **`/autopilot`** heavy-task protocol — auto-checkpoint (`PROGRESS.md`) + delegate to subagents + commit per verified step (see "Heavy autonomous tasks" below). |
 | anything that changed code | Finish with the **Validation pipeline** below, then **`/check`**. |
 
 **Non-negotiables on every change, regardless of who asked or how casually:**
@@ -33,6 +34,21 @@ This boilerplate is built so that **any** user — a seasoned engineer or a non-
 5. If you're unsure what the user wants, ask ONE clarifying question — but default to the most maintainable option and proceed.
 
 The CI gates, git hooks, and these skills exist so that the floor for *any* prompt is professional-grade. Hold that floor. For a non-developer, translate jargon, explain what you did in one plain sentence, and lean on `/run` + `/debug` so they can see it work.
+
+## Heavy autonomous tasks — auto-checkpoint & delegate (context safety)
+
+Large autonomous requests can run longer than a single context window. When that happens mid-task, context is compacted/summarized and detail is lost — which is how agents "forget what they were doing" and leave work half-done or broken. **You must prevent that automatically.** This is especially important for non-developers, who won't know to manage it themselves.
+
+**Trigger this protocol AUTOMATICALLY (no need to be asked) when a request is heavy**, i.e. any of: it spans many files/phases; it's an "do all of this / build the whole X / while I'm away / make it production-grade everywhere" request; it's a migration/audit/refactor across the codebase; or you estimate it will take many tool-steps or exceed ~700K tokens of context. For small, one-shot tasks, do NOT add this overhead — just do them.
+
+When triggered, run the task like this:
+
+1. **Create a checkpoint file** at the repo root — `PROGRESS.md` (committed; it's the resume anchor). It is the single source of truth and must contain: the goal, standing decisions (so they're never re-litigated), a phase checklist with `[x]` done / `[~]` in-progress / `[ ]` todo (each noting its verification status), the current state (active phase + branch), a blockers log, and a short **"How to resume after compaction"** header (re-read this file → `git log --oneline -15` → re-run the validation pipeline → continue from the first unchecked item). Keep it updated after every step.
+2. **Delegate substantial sub-work to subagents** (the Task/Agent tool — an "agent team"). Each subagent does the heavy file-reading and implementation in ITS OWN context, then returns a concise result — this keeps your main context window lean so you can orchestrate far more work before compaction. Give each subagent a tight spec and a hard rule: **end with the build + tests green, or revert and report — never leave a broken build.** Verify its output yourself (build/test/gates) in the main loop before accepting; don't trust-without-verifying.
+3. **Commit each verified increment** — small, atomic, conventional messages — so progress is durable and the work is resumable from any point. Never commit a broken build (the pre-commit hook + CI enforce this).
+4. **After a compaction**, recover deterministically: read `PROGRESS.md`, run `git log`, re-run the validation pipeline to confirm green, then resume from the first unchecked item. Do not re-derive what the checkpoint already records.
+
+This boilerplate was itself upgraded exactly this way — see `AUTONOMY-LOG.md` for a real worked example of the checkpoint + delegate-to-subagents pattern. The `/autopilot` skill packages this protocol; describing a big task is enough to trigger it.
 
 ## Core philosophy — Modularity above all
 

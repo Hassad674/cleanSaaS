@@ -55,6 +55,10 @@ If an optional key is empty, `cmd/api/main.go` skips wiring that feature (nil se
 - `/add-feature`, `/add-endpoint`, `/add-adapter`, `/add-migration` — scaffolders (layer-correct, domain-first).
 - `/remove-feature`, `/verify-independence` — prove/perform clean module removal (the modularity promise).
 - `/check`, `/review` — architecture-independence audit & pre-commit code review.
+- `/autopilot` — heavy/long autonomous tasks: auto-checkpoint to `PROGRESS.md` + delegate to subagents + commit each verified step, so work survives context compaction.
+
+## Heavy autonomous tasks (auto behavior)
+For any heavy/multi-phase request ("build everything", big migration/audit, "while I'm away", est. >700K tokens), the agent AUTOMATICALLY (per root CLAUDE.md): keeps a committed `PROGRESS.md` checkpoint, delegates substantial sub-work to subagents (keeps main context lean), verifies each subagent's output, and commits per verified increment — resumable after compaction. Small tasks skip this overhead. See `AUTONOMY-LOG.md` for a real worked example.
 
 ## Pointers
 - Detailed layer structure → [architecture.md](architecture.md)

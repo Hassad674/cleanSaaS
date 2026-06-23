@@ -22,6 +22,7 @@ Just say what you want. The agent routes your request to the right built-in work
 | *"the login button doesn't do anything — here's a screenshot"* | `/debug` walks you through reproducing it (with the Claude Chrome extension), writes a failing test, fixes it, and proves the fix. |
 | *"switch payments from Stripe to LemonSqueezy"* | `/add-adapter` swaps the provider by changing one line. |
 | *"remove the blog"* | `/remove-feature` deletes it cleanly and proves nothing else broke. |
+| *"build my whole SaaS"* (a big, multi-part job) | `/autopilot` runs it in safe, checkpointed steps using a team of sub-agents, so it never loses track on long tasks — and it commits progress as it goes. |
 
 Every change is automatically held to a professional floor: layered architecture, tests, security (parameterized SQL, auth, rate limits), and CI gates + a git hook that **fail the build if a rule is broken**. You get a senior engineer's standards by default — type a sentence, get a tested feature.
 
