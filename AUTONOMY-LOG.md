@@ -70,12 +70,15 @@ Sequential, verified-or-revert, 1 compartment = 1 commit. Flip to A only when bu
       + X-Request-ID + 5xx-at-Error. Verified LIVE (livez/readyz 200, /metrics series, request-id echoed).
 - [x] **Auto-checkpoint + subagent-delegation protocol** (user request): CLAUDE.md "Heavy autonomous tasks"
       section + /autopilot skill + memory + README. So future users get context-safety automatically.
-- [ ] Integration tests → A (live-PG, gated by build tag) — NEXT
-- [ ] Scalability → A (Redis adapters: rate-limit, WS pub/sub, scheduler leader-election; add redis to compose)
-- [ ] Perf → A (keyset pagination + cache hot reads)
-- [ ] API → A (/v1 + response envelope + OpenAPI gen) — NOTE: envelope change ripples to frontend
+- [x] **Integration tests → A**: 27 live-PG tests (tag-gated), 2× clean, + fixed a real uuid bug in team.go.
+- [x] **Scalability → A**: Redis-backed rate limiter (in-memory fallback) + pg advisory-lock scheduler
+      leader-election + Redis WS pub/sub; verified with a real Redis. Works without Redis out-of-the-box.
+- [ ] Perf → A (keyset pagination + cache hot reads via the new Redis client)
+- [ ] API → A (/v1 + response envelope + OpenAPI gen) — RISK: envelope change ripples to the frontend demo
 - [ ] DDD → A (team aggregate + domain events) + extend TxManager
 - [ ] Security finish → A (audit log, CSP, session_version, centralized validation)
+Reached A this session: hexagonal, maintainability, evolvability, security-base, RLS/multi-tenancy,
+observability, testing, scalability. Remaining to A: perf, API, DDD-depth, security-extras.
 Honest note: getting ALL of the above to verified-A in one session is not guaranteed; the heaviest
 (distributed Redis scaling, /v1 envelope w/ frontend) may land as A- pending a verification pass.
 
