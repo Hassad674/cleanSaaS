@@ -3,6 +3,7 @@ package service
 import "context"
 
 type PaymentEvent struct {
+	EventID        string // Stripe event ID (evt_...), used for idempotency
 	Type           string // "checkout.session.completed", "invoice.paid", "customer.subscription.updated", "customer.subscription.deleted"
 	CustomerID     string
 	SubscriptionID string

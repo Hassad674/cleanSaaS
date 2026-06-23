@@ -64,8 +64,9 @@ func main() {
 		subscriptionRepo := postgres.NewSubscriptionRepository(db)
 		planRepo := postgres.NewPlanRepository(db)
 		invoiceRepo := postgres.NewInvoiceRepository(db)
+		processedEventRepo := postgres.NewProcessedEventRepository(db)
 		paymentSvc := adaptstripe.NewPaymentService(cfg.StripeKey, cfg.StripeWebhookSecret)
-		billingSvc = appbilling.NewService(userRepo, subscriptionRepo, planRepo, invoiceRepo, paymentSvc, cfg.FrontendURL)
+		billingSvc = appbilling.NewService(userRepo, subscriptionRepo, planRepo, invoiceRepo, processedEventRepo, paymentSvc, cfg.FrontendURL)
 	}
 
 	// Storage (optional — only if R2 keys set)

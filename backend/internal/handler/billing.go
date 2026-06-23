@@ -188,6 +188,9 @@ func (h *BillingHandler) DemoPortal(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *BillingHandler) HandleWebhook(w http.ResponseWriter, r *http.Request) {
+	// 400 (bad request) is reserved for genuinely malformed requests — a body
+	// we can't read or a missing signature. Stripe treats 4xx as "do not
+	// retry", so we must NOT return 400 for transient/processing failures.
 	payload, err := io.ReadAll(io.LimitReader(r.Body, 65536))
 	if err != nil {
 		response.Error(w, http.StatusBadRequest, "failed to read body")
@@ -200,8 +203,12 @@ func (h *BillingHandler) HandleWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Processing errors (invalid signature, DB failures, downstream errors) are
+	// returned as 500 so Stripe retries the delivery. Combined with the
+	// idempotency check in the service, retries are safe and legitimate events
+	// are never permanently dropped on a transient failure.
 	if err := h.svc.HandleWebhook(r.Context(), payload, signature); err != nil {
-		response.Error(w, http.StatusBadRequest, "webhook processing failed")
+		response.Error(w, http.StatusInternalServerError, "webhook processing failed")
 		return
 	}
 

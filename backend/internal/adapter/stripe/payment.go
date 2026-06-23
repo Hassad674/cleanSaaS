@@ -170,7 +170,7 @@ func (s *PaymentService) HandleWebhook(payload []byte, signature string) (*servi
 		return nil, fmt.Errorf("verifying webhook signature: %w", err)
 	}
 
-	pe := &service.PaymentEvent{Type: string(event.Type)}
+	pe := &service.PaymentEvent{EventID: event.ID, Type: string(event.Type)}
 
 	switch event.Type {
 	case "checkout.session.completed":

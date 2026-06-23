@@ -3,6 +3,7 @@ package billing
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/hassad/boilerplateSaaS/backend/internal/domain"
@@ -12,12 +13,13 @@ import (
 )
 
 type Service struct {
-	users         repository.UserRepository
-	subscriptions repository.SubscriptionRepository
-	plans         repository.PlanRepository
-	invoices      repository.InvoiceRepository
-	payment       service.PaymentService
-	frontendURL   string
+	users           repository.UserRepository
+	subscriptions   repository.SubscriptionRepository
+	plans           repository.PlanRepository
+	invoices        repository.InvoiceRepository
+	processedEvents repository.ProcessedEventRepository
+	payment         service.PaymentService
+	frontendURL     string
 }
 
 func NewService(
@@ -25,16 +27,18 @@ func NewService(
 	subscriptions repository.SubscriptionRepository,
 	plans repository.PlanRepository,
 	invoices repository.InvoiceRepository,
+	processedEvents repository.ProcessedEventRepository,
 	payment service.PaymentService,
 	frontendURL string,
 ) *Service {
 	return &Service{
-		users:         users,
-		subscriptions: subscriptions,
-		plans:         plans,
-		invoices:      invoices,
-		payment:       payment,
-		frontendURL:   frontendURL,
+		users:           users,
+		subscriptions:   subscriptions,
+		plans:           plans,
+		invoices:        invoices,
+		processedEvents: processedEvents,
+		payment:         payment,
+		frontendURL:     frontendURL,
 	}
 }
 
@@ -189,6 +193,24 @@ func (s *Service) HandleWebhook(ctx context.Context, payload []byte, signature s
 
 	if event == nil {
 		return nil
+	}
+
+	// Idempotency: skip events Stripe has already delivered. We record the
+	// event ID before processing so a retried delivery is a no-op. An empty
+	// EventID (e.g. in tests or non-Stripe sources) falls through to normal
+	// processing.
+	if event.EventID != "" {
+		alreadyProcessed, err := s.processedEvents.MarkProcessed(ctx, event.EventID, event.Type)
+		if err != nil {
+			return fmt.Errorf("recording processed event: %w", err)
+		}
+		if alreadyProcessed {
+			slog.Info("skipping already-processed stripe webhook event",
+				slog.String("event_id", event.EventID),
+				slog.String("event_type", event.Type),
+			)
+			return nil
+		}
 	}
 
 	switch event.Type {
