@@ -9,6 +9,26 @@ Open-source boilerplate for medium-to-large SaaS applications.
 
 ---
 
+## Vibe coding with CleanSaaS (you don't need to be a developer)
+
+CleanSaaS is calibrated so that, opened in [Claude Code](https://claude.com/claude-code), **describing what you want in plain English produces production-grade code by default** — correctly architected, tested, and checked — without you knowing the internals. Anyone can generate an app with AI; this boilerplate is the guardrails that keep it maintainable, fast, and secure.
+
+Just say what you want. The agent routes your request to the right built-in workflow automatically:
+
+| You type… | What happens |
+|---|---|
+| *"start the app"* | `/run` boots the database, backend, and frontend, then smoke-tests it. |
+| *"add a feature where users can create projects with tasks"* | `/add-feature` scaffolds every layer (database → API → UI), writes tests, and keeps it modular. |
+| *"the login button doesn't do anything — here's a screenshot"* | `/debug` walks you through reproducing it (with the Claude Chrome extension), writes a failing test, fixes it, and proves the fix. |
+| *"switch payments from Stripe to LemonSqueezy"* | `/add-adapter` swaps the provider by changing one line. |
+| *"remove the blog"* | `/remove-feature` deletes it cleanly and proves nothing else broke. |
+
+Every change is automatically held to a professional floor: layered architecture, tests, security (parameterized SQL, auth, rate limits), and CI gates + a git hook that **fail the build if a rule is broken**. You get a senior engineer's standards by default — type a sentence, get a tested feature.
+
+**New here?** Run the [Quickstart](#quickstart) once, then just talk to the agent. Type `/run` to see it live.
+
+---
+
 ## Prerequisites
 
 | Tool             | Version         | Notes |

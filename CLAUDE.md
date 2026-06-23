@@ -9,6 +9,31 @@ Open-source boilerplate for medium-to-large SaaS applications. Not a micro-SaaS 
 
 This project is meant to showcase professional-grade engineering. Every file, every pattern, every decision should reflect that.
 
+## Default operating procedure for EVERY request (read this first)
+
+This boilerplate is built so that **any** user — a seasoned engineer or a non-developer "vibe coding" in plain English — gets **top-tier, production-grade results by default**, without having to know the internals. When a user asks for something, do NOT free-style. Classify the request and follow the matching rail; each rail already encodes the architecture, tests, and checks. This is what makes quality the default, not an afterthought.
+
+| User says (plain English) | Your default rail |
+|---|---|
+| "build/add <feature>" (e.g. "add a projects feature with tasks") | Use the **`/add-feature`** skill — scaffolds all layers domain-first, with tests, respecting modularity. |
+| "add an endpoint / action to <feature>" | Use **`/add-endpoint`**. |
+| "use <provider> instead" / "add Stripe/Resend/etc." | Use **`/add-adapter`** (implement the port, change one wiring line). |
+| "add a table / column / store <data>" | Use **`/add-migration`** (numbered up/down, no cross-feature FK). |
+| "remove <feature>" | Use **`/remove-feature`**; verify with **`/verify-independence`**. |
+| "it's broken / this doesn't work / <screenshot>" | Use **`/debug`** (guided reproduce → bug report → failing test → fix → verify). |
+| "run it / start the app / does it work?" | Use **`/run`**, then smoke-test. |
+| "is this correct / review this" | Use **`/check`** (architecture) and **`/review`** (quality/security). |
+| anything that changed code | Finish with the **Validation pipeline** below, then **`/check`**. |
+
+**Non-negotiables on every change, regardless of who asked or how casually:**
+1. Follow the layer rules (backend hexagonal `handler→app→domain←port←adapter`; frontend feature-based, no cross-feature imports). Never inline business logic in a handler/page.
+2. Write tests alongside the code (TDD loop). A change isn't done until tests + the validation pipeline are green.
+3. Respect the hard code-quality limits (≤600 lines/file, ≤50/func, ≤4 params, depth 3, cyclo <10) and the design tokens (no hardcoded colors).
+4. Parameterized SQL only; validate input at boundaries; never commit secrets.
+5. If you're unsure what the user wants, ask ONE clarifying question — but default to the most maintainable option and proceed.
+
+The CI gates, git hooks, and these skills exist so that the floor for *any* prompt is professional-grade. Hold that floor. For a non-developer, translate jargon, explain what you did in one plain sentence, and lean on `/run` + `/debug` so they can see it work.
+
 ## Core philosophy — Modularity above all
 
 This is a boilerplate. We do NOT know what the end user will build with it. They might build a project management tool, an e-commerce platform, a social network, a CRM, or anything else. They will NOT use every module we provide.
