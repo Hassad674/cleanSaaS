@@ -93,10 +93,25 @@ func (rl *RateLimiter) cleanup() {
 	}
 }
 
-// RateLimit returns middleware that rate-limits by client IP.
+// rateLimitExemptPaths are operational endpoints that must never be throttled:
+// liveness/readiness probes and the Prometheus scrape target are polled
+// frequently by infrastructure and rejecting them would cause false outages.
+var rateLimitExemptPaths = map[string]bool{
+	"/health":  true,
+	"/livez":   true,
+	"/readyz":  true,
+	"/metrics": true,
+}
+
+// RateLimit returns middleware that rate-limits by client IP, exempting the
+// operational endpoints in rateLimitExemptPaths.
 func RateLimit(limiter *RateLimiter) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if rateLimitExemptPaths[r.URL.Path] {
+				next.ServeHTTP(w, r)
+				return
+			}
 			if !limiter.Allow(r.RemoteAddr) {
 				w.Header().Set("Retry-After", "60")
 				response.Error(w, http.StatusTooManyRequests, "rate limit exceeded")

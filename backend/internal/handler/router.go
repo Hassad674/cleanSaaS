@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"log/slog"
@@ -21,6 +22,7 @@ import (
 	"github.com/hassad/boilerplateSaaS/backend/internal/handler/middleware"
 	"github.com/hassad/boilerplateSaaS/backend/internal/port/service"
 	"github.com/hassad/boilerplateSaaS/backend/pkg/jwt"
+	"github.com/hassad/boilerplateSaaS/backend/pkg/observability"
 	"github.com/hassad/boilerplateSaaS/backend/pkg/ws"
 )
 
@@ -42,6 +44,7 @@ func NewRouter(
 	logger *slog.Logger,
 	demoAI service.AIService,
 	orgResolver middleware.OrgResolver,
+	metrics *observability.Metrics,
 ) http.Handler {
 	r := chi.NewRouter()
 
@@ -49,17 +52,36 @@ func NewRouter(
 	apiLimiter := middleware.NewRateLimiter(100) // 100 req/min for API
 	authLimiter := middleware.NewRateLimiter(10) // 10 req/min for auth
 
-	// Global middleware
-	r.Use(middleware.StructuredLogging(logger))
-	r.Use(chimw.Recoverer)
+	// Global middleware. Order (outermost first) matters:
+	//   RequestID  — establish/echo X-Request-ID before anything can fail.
+	//   RealIP     — fix RemoteAddr before logging/rate-limiting reads it.
+	//   Logging    — outermost observer: sees the final status, incl. a 500 a
+	//                panic was converted into by the inner Recoverer.
+	//   Metrics    — same: records the recovered 500 (excludes /metrics,/livez).
+	//   Tracing    — server span per request; no-op unless OTLP is configured.
+	//   Recoverer  — converts panics to 500 BELOW the observers so they still
+	//                record a metric/log, then security/CORS/body/rate-limit.
+	r.Use(middleware.RequestID)
 	r.Use(chimw.RealIP)
+	r.Use(middleware.StructuredLogging(logger))
+	if metrics != nil {
+		r.Use(middleware.Metrics(metrics))
+	}
+	r.Use(middleware.Tracing)
+	r.Use(chimw.Recoverer)
 	r.Use(middleware.SecurityHeaders)
 	r.Use(middleware.CORS(frontendURL))
 	r.Use(middleware.MaxBodySize(1 << 20)) // 1MB default for JSON endpoints
 	r.Use(middleware.RateLimit(apiLimiter))
 
-	// Health check
+	// Health & observability endpoints (no auth, not rate-limit sensitive).
+	// /health keeps the legacy payload for backwards-compatibility.
 	r.Get("/health", healthHandler(db))
+	r.Get("/livez", livenessHandler())
+	r.Get("/readyz", readinessHandler(db))
+	if metrics != nil {
+		r.Handle("/metrics", metrics.Handler())
+	}
 
 	// WebSocket endpoint (optional — only if hub is provided)
 	if wsHub != nil {
@@ -231,5 +253,44 @@ func healthHandler(db *sql.DB) http.HandlerFunc {
 			"uptime":  uptime,
 			"version": "1.0.0",
 		})
+	}
+}
+
+// readinessProbeTimeout bounds the DB ping on /readyz so a hung database can
+// never make the probe itself hang.
+const readinessProbeTimeout = 2 * time.Second
+
+// livenessHandler reports that the process is alive and serving. It performs NO
+// dependency checks — a live-but-not-ready pod must still pass liveness so k8s
+// does not restart it while a dependency recovers.
+func livenessHandler() http.HandlerFunc {
+	return func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(map[string]string{"status": "alive"})
+	}
+}
+
+// readinessHandler reports whether the service can serve traffic: it pings the
+// database under a short timeout. 200 {"status":"ready"} when reachable, else
+// 503 {"status":"not ready","db":"<error>"}.
+func readinessHandler(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		ctx, cancel := context.WithTimeout(r.Context(), readinessProbeTimeout)
+		defer cancel()
+
+		w.Header().Set("Content-Type", "application/json")
+
+		if err := db.PingContext(ctx); err != nil {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			json.NewEncoder(w).Encode(map[string]string{
+				"status": "not ready",
+				"db":     err.Error(),
+			})
+			return
+		}
+
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(map[string]string{"status": "ready"})
 	}
 }

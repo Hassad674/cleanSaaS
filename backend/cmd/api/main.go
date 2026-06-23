@@ -29,6 +29,7 @@ import (
 	"github.com/hassad/boilerplateSaaS/backend/internal/port/service"
 	"github.com/hassad/boilerplateSaaS/backend/pkg/jobs"
 	"github.com/hassad/boilerplateSaaS/backend/pkg/jwt"
+	"github.com/hassad/boilerplateSaaS/backend/pkg/observability"
 	"github.com/hassad/boilerplateSaaS/backend/pkg/ws"
 )
 
@@ -41,9 +42,27 @@ func main() {
 
 	cfg := config.Load()
 
+	// Tracing. No-op (collector-free) unless OTEL_EXPORTER_OTLP_ENDPOINT is set,
+	// so local runs need no collector. shutdownTracing flushes pending spans on
+	// graceful shutdown.
+	shutdownTracing, err := observability.SetupTracing(context.Background(), observability.TracingConfig{
+		Endpoint:    cfg.OTELExporterEndpoint,
+		ServiceName: cfg.OTELServiceName,
+	})
+	if err != nil {
+		logger.Error("failed to set up tracing", slog.String("error", err.Error()))
+	}
+
 	// Database
 	db := postgres.NewDB(cfg.DatabaseURL)
 	defer db.Close()
+
+	// Prometheus metrics (dedicated registry). The HTTP middleware records
+	// request count/latency; a gauge reports DB pool in-use connections.
+	var metrics *observability.Metrics
+	if cfg.MetricsEnabled {
+		metrics = observability.NewMetrics(db)
+	}
 
 	// Repositories
 	userRepo := postgres.NewUserRepository(db)
@@ -157,7 +176,7 @@ func main() {
 	// Router. The org resolver turns an authenticated user into an authorized
 	// active organization for each request (verifying membership of any explicit
 	// org claim, else the user's default org).
-	router := handler.NewRouter(authSvc, userSvc, billingSvc, storageSvc, aiSvc, notifSvc, blogSvc, teamSvc, wsHub, cfg.JWTSecret, cfg.FrontendURL, db, logger, demoAI, orgSvc.ResolveActiveOrg)
+	router := handler.NewRouter(authSvc, userSvc, billingSvc, storageSvc, aiSvc, notifSvc, blogSvc, teamSvc, wsHub, cfg.JWTSecret, cfg.FrontendURL, db, logger, demoAI, orgSvc.ResolveActiveOrg, metrics)
 
 	// HTTP server
 	srv := &http.Server{
@@ -232,6 +251,13 @@ func main() {
 
 	if err := srv.Shutdown(ctx); err != nil {
 		logger.Error("server forced to shutdown", slog.String("error", err.Error()))
+	}
+
+	// Flush any pending spans before exit (no-op when tracing is disabled).
+	if shutdownTracing != nil {
+		if err := shutdownTracing(ctx); err != nil {
+			logger.Error("failed to flush tracer", slog.String("error", err.Error()))
+		}
 	}
 
 	db.Close()

@@ -63,18 +63,24 @@ func AuthWithOrg(secret string, resolve OrgResolver) func(http.Handler) http.Han
 			ctx := context.WithValue(r.Context(), userIDKey, claims.UserID)
 			ctx = context.WithValue(ctx, userRoleKey, claims.Role)
 
+			activeOrg := claims.OrgID
 			if resolve != nil {
 				orgID, err := resolve(ctx, claims.UserID, claims.OrgID)
 				if err != nil {
 					response.Error(w, http.StatusUnauthorized, "invalid organization")
 					return
 				}
+				activeOrg = orgID
 				if orgID != "" {
 					ctx = orgctx.WithOrgID(ctx, orgID)
 				}
 			} else if claims.OrgID != "" {
 				ctx = orgctx.WithOrgID(ctx, claims.OrgID)
 			}
+
+			// Attribute the access log to the caller (read by StructuredLogging
+			// when the request completes). No-op if logging is not in the chain.
+			setLogUser(ctx, claims.UserID, activeOrg)
 
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -59,6 +60,11 @@ type Config struct {
 	GoogleClientID     string
 	GoogleClientSecret string
 	GoogleRedirectURL  string
+
+	// Observability
+	OTELExporterEndpoint string // OTLP/HTTP collector endpoint; empty disables tracing (default "")
+	OTELServiceName      string // service.name on emitted spans (default "cleansaas-backend")
+	MetricsEnabled       bool   // expose Prometheus /metrics + record HTTP metrics (default true)
 }
 
 func Load() *Config {
@@ -89,6 +95,10 @@ func Load() *Config {
 		GoogleClientID:      env("GOOGLE_CLIENT_ID", ""),
 		GoogleClientSecret:  env("GOOGLE_CLIENT_SECRET", ""),
 		GoogleRedirectURL:   env("GOOGLE_REDIRECT_URL", ""),
+
+		OTELExporterEndpoint: env("OTEL_EXPORTER_OTLP_ENDPOINT", ""),
+		OTELServiceName:      env("OTEL_SERVICE_NAME", "cleansaas-backend"),
+		MetricsEnabled:       envBool("METRICS_ENABLED", true),
 	}
 
 	if err := cfg.Validate(); err != nil {
@@ -157,6 +167,21 @@ func envDuration(key string, fallback time.Duration) time.Duration {
 		return fallback
 	}
 	return d
+}
+
+// envBool reads a boolean ("1", "t", "true", "0", "false", ...) from the
+// environment, falling back to the provided default when unset or unparseable.
+func envBool(key string, fallback bool) bool {
+	v := os.Getenv(key)
+	if v == "" {
+		return fallback
+	}
+	b, err := strconv.ParseBool(v)
+	if err != nil {
+		log.Printf("WARNING: invalid bool for %s=%q, using default %v", key, v, fallback)
+		return fallback
+	}
+	return b
 }
 
 func cleanDSN(dsn string) string {

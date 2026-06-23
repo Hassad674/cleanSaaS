@@ -106,6 +106,44 @@ func TestConfig_Load_TimeoutOverrides(t *testing.T) {
 	}
 }
 
+func TestConfig_Load_ObservabilityDefaults(t *testing.T) {
+	t.Setenv("JWT_SECRET", strongSecret)
+	t.Setenv("APP_ENV", "test")
+	t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "")
+	t.Setenv("OTEL_SERVICE_NAME", "")
+	t.Setenv("METRICS_ENABLED", "")
+
+	cfg := Load()
+	if cfg.OTELExporterEndpoint != "" {
+		t.Errorf("OTELExporterEndpoint = %q, want empty (tracing off by default)", cfg.OTELExporterEndpoint)
+	}
+	if cfg.OTELServiceName != "cleansaas-backend" {
+		t.Errorf("OTELServiceName = %q, want cleansaas-backend", cfg.OTELServiceName)
+	}
+	if !cfg.MetricsEnabled {
+		t.Error("MetricsEnabled should default to true")
+	}
+}
+
+func TestConfig_Load_ObservabilityOverrides(t *testing.T) {
+	t.Setenv("JWT_SECRET", strongSecret)
+	t.Setenv("APP_ENV", "test")
+	t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "localhost:4318")
+	t.Setenv("OTEL_SERVICE_NAME", "custom-svc")
+	t.Setenv("METRICS_ENABLED", "false")
+
+	cfg := Load()
+	if cfg.OTELExporterEndpoint != "localhost:4318" {
+		t.Errorf("OTELExporterEndpoint = %q, want localhost:4318", cfg.OTELExporterEndpoint)
+	}
+	if cfg.OTELServiceName != "custom-svc" {
+		t.Errorf("OTELServiceName = %q, want custom-svc", cfg.OTELServiceName)
+	}
+	if cfg.MetricsEnabled {
+		t.Error("MetricsEnabled should be false when METRICS_ENABLED=false")
+	}
+}
+
 func TestConfig_cleanDSN_StripsChannelBinding(t *testing.T) {
 	in := "postgres://u:p@host/db?sslmode=require&channel_binding=require"
 	out := cleanDSN(in)
