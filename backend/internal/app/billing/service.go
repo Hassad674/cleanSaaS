@@ -90,7 +90,13 @@ func (s *Service) DemoCheckout(ctx context.Context, planID, successURL, cancelUR
 		return "", fmt.Errorf("finding plan: %w", err)
 	}
 
-	if plan.PriceCents == 0 {
+	// A free plan has no checkout. Express the "is this free?" rule through the
+	// Money value object rather than poking the raw cents field.
+	price, err := plan.Price()
+	if err != nil {
+		return "", err
+	}
+	if price.IsZero() {
 		return "", domain.ErrValidation
 	}
 
@@ -155,6 +161,8 @@ func (s *Service) CancelSubscription(ctx context.Context, userID string) error {
 		return fmt.Errorf("finding subscription: %w", err)
 	}
 
+	// Validate the transition in the domain before touching Stripe, so we never
+	// issue a provider call for a subscription that can't be canceled.
 	if !sub.CanCancel() {
 		return domain.ErrValidation
 	}
@@ -163,7 +171,9 @@ func (s *Service) CancelSubscription(ctx context.Context, userID string) error {
 		return fmt.Errorf("canceling stripe subscription: %w", err)
 	}
 
-	sub.Cancel()
+	if err := sub.Cancel(); err != nil {
+		return err
+	}
 	return s.subscriptions.Update(ctx, sub)
 }
 
@@ -253,14 +263,20 @@ func (s *Service) handleSubscriptionUpdated(ctx context.Context, event *service.
 		return s.createSubscriptionFromWebhook(ctx, event)
 	}
 
+	// Resolve the target plan: the price's plan if the event carries one and it
+	// maps, otherwise the plan the subscription is already on.
+	planID := existing.PlanID
 	if event.PriceID != "" {
-		plan, err := s.plans.FindByStripePriceID(ctx, event.PriceID)
-		if err == nil {
-			existing.PlanID = plan.ID
+		if plan, err := s.plans.FindByStripePriceID(ctx, event.PriceID); err == nil {
+			planID = plan.ID
 		}
 	}
-	existing.Status = domainbilling.StatusActive
-	existing.UpdatedAt = time.Now()
+
+	// The webhook payload carries no period end; preserve the current one if it
+	// is still in the future, otherwise apply the default-period domain rule.
+	if err := existing.Activate(planID, s.periodEndFor(existing)); err != nil {
+		return err
+	}
 
 	return s.subscriptions.Update(ctx, existing)
 }
@@ -271,8 +287,7 @@ func (s *Service) handleSubscriptionDeleted(ctx context.Context, event *service.
 		return nil
 	}
 
-	sub.Status = domainbilling.StatusCanceled
-	sub.UpdatedAt = time.Now()
+	sub.MarkCanceled()
 	return s.subscriptions.Update(ctx, sub)
 }
 
@@ -292,14 +307,22 @@ func (s *Service) createSubscriptionFromWebhook(ctx context.Context, event *serv
 		return nil
 	}
 
-	sub := &domainbilling.Subscription{
-		UserID:             u.ID,
-		PlanID:             plan.ID,
-		StripeSubscription: event.SubscriptionID,
-		Status:             domainbilling.StatusActive,
-		CurrentPeriodStart: time.Now(),
-		CurrentPeriodEnd:   time.Now().Add(30 * 24 * time.Hour),
+	// Period 0 applies the domain's DefaultPeriod (30 days) — the business rule
+	// now lives in the aggregate, not in this webhook glue.
+	sub, err := domainbilling.NewSubscription(u.ID, plan.ID, event.SubscriptionID, 0)
+	if err != nil {
+		return err
 	}
 
 	return s.subscriptions.Create(ctx, sub)
+}
+
+// periodEndFor returns a valid future period end for a subscription whose
+// external update carried no explicit period: keep the existing end if it is
+// still ahead, otherwise extend by the domain's DefaultPeriod.
+func (s *Service) periodEndFor(sub *domainbilling.Subscription) time.Time {
+	if sub.CurrentPeriodEnd.After(time.Now()) {
+		return sub.CurrentPeriodEnd
+	}
+	return time.Now().Add(domainbilling.DefaultPeriod)
 }

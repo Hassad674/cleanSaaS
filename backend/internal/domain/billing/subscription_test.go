@@ -63,8 +63,9 @@ func TestSubscription_Cancel(t *testing.T) {
 	}
 
 	before := sub.UpdatedAt
-	sub.Cancel()
+	err := sub.Cancel()
 
+	assert.NoError(t, err)
 	assert.True(t, sub.CancelAtPeriodEnd, "should set CancelAtPeriodEnd to true")
 	assert.True(t, sub.UpdatedAt.After(before), "should update UpdatedAt")
 }

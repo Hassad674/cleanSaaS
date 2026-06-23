@@ -7,7 +7,10 @@ import (
 )
 
 type User struct {
-	ID            string
+	ID string
+	// Email is stored as a normalized string at the repository boundary. It is
+	// validated and normalized through the Email value object in New/NewOAuth;
+	// use EmailVO() to obtain the typed value object when an invariant needs it.
 	Email         string
 	Name          string
 	PasswordHash  string
@@ -22,15 +25,16 @@ type User struct {
 }
 
 func New(email, name, passwordHash string) (*User, error) {
-	if email == "" {
-		return nil, domain.ErrValidation
+	addr, err := NewEmail(email)
+	if err != nil {
+		return nil, err
 	}
 	if name == "" {
 		return nil, domain.ErrValidation
 	}
 
 	return &User{
-		Email:        email,
+		Email:        addr.String(),
 		Name:         name,
 		PasswordHash: passwordHash,
 		Role:         RoleMember,
@@ -41,8 +45,16 @@ func New(email, name, passwordHash string) (*User, error) {
 }
 
 func NewOAuth(email, name, provider, providerID string) *User {
+	// OAuth providers supply a vetted email; we still normalize it through the
+	// value object so casing/whitespace match the email-signup path. A provider
+	// that somehow returns a malformed address falls back to the raw value
+	// rather than failing the login (the address is trusted upstream).
+	normalized := email
+	if addr, err := NewEmail(email); err == nil {
+		normalized = addr.String()
+	}
 	return &User{
-		Email:         email,
+		Email:         normalized,
 		Name:          name,
 		Role:          RoleMember,
 		EmailVerified: true,
@@ -51,6 +63,13 @@ func NewOAuth(email, name, provider, providerID string) *User {
 		CreatedAt:     time.Now(),
 		UpdatedAt:     time.Now(),
 	}
+}
+
+// EmailVO returns the user's email as the Email value object. It re-parses the
+// stored string (which originated from NewEmail) so callers that need the typed
+// invariant — rather than the raw repository string — can obtain it.
+func (u *User) EmailVO() (Email, error) {
+	return NewEmail(u.Email)
 }
 
 func (u *User) IsAdmin() bool {
