@@ -27,11 +27,11 @@ func PlanFromDomain(p *billing.Plan) PlanResponse {
 }
 
 type SubscriptionResponse struct {
-	ID                 string `json:"id"`
-	PlanID             string `json:"plan_id"`
-	Status             string `json:"status"`
-	CurrentPeriodEnd   string `json:"current_period_end"`
-	CancelAtPeriodEnd  bool   `json:"cancel_at_period_end"`
+	ID                string `json:"id"`
+	PlanID            string `json:"plan_id"`
+	Status            string `json:"status"`
+	CurrentPeriodEnd  string `json:"current_period_end"`
+	CancelAtPeriodEnd bool   `json:"cancel_at_period_end"`
 }
 
 func SubscriptionFromDomain(s *billing.Subscription) SubscriptionResponse {
