@@ -66,8 +66,11 @@ Sequential, verified-or-revert, 1 compartment = 1 commit. Flip to A only when bu
 - [x] **RLS / multi-tenancy → A** (b521736): org-based tenancy, 3-layer isolation, Postgres RLS FORCE,
       app_user role + SET LOCAL ROLE + GUC, ADR 0006. Cross-tenant isolation test PASSES vs live DB.
       Stack reset + reseeded org-aware; login returns JWT with `org` claim. VERIFIED.
-- [ ] Observability → A (OTel tracing + Prometheus metrics + /livez /readyz) — IN PROGRESS
-- [ ] Integration tests → A (testcontainers / live-PG, gated by build tag)
+- [x] **Observability → A** (commit after RLS): OTel (no-op default) + Prometheus /metrics + /livez /readyz
+      + X-Request-ID + 5xx-at-Error. Verified LIVE (livez/readyz 200, /metrics series, request-id echoed).
+- [x] **Auto-checkpoint + subagent-delegation protocol** (user request): CLAUDE.md "Heavy autonomous tasks"
+      section + /autopilot skill + memory + README. So future users get context-safety automatically.
+- [ ] Integration tests → A (live-PG, gated by build tag) — NEXT
 - [ ] Scalability → A (Redis adapters: rate-limit, WS pub/sub, scheduler leader-election; add redis to compose)
 - [ ] Perf → A (keyset pagination + cache hot reads)
 - [ ] API → A (/v1 + response envelope + OpenAPI gen) — NOTE: envelope change ripples to frontend
