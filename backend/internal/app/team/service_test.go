@@ -2,15 +2,36 @@ package team
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 
 	"github.com/hassad/boilerplateSaaS/backend/internal/domain"
 	domainteam "github.com/hassad/boilerplateSaaS/backend/internal/domain/team"
+	"github.com/hassad/boilerplateSaaS/backend/internal/port/repository"
 )
 
 // --- Mocks ---
+
+// mockTxManager stubs repository.TxManager. By default WithTeamTx just invokes the
+// callback directly with the supplied repositories — there is no real transaction in a
+// unit test, so "atomicity" is simulated by the callback returning early on the first
+// write error (exactly as the real TxManager rolls back on a returned error).
+type mockTxManager struct {
+	teams   repository.TeamRepository
+	members repository.TeamMemberRepository
+}
+
+func (m *mockTxManager) WithTeamTx(ctx context.Context, fn func(teams repository.TeamRepository, members repository.TeamMemberRepository) error) error {
+	return fn(m.teams, m.members)
+}
+
+// newTestService wires the team service with the given repositories and a passthrough
+// tx manager that hands those same repositories to the use-case callback.
+func newTestService(teams repository.TeamRepository, members repository.TeamMemberRepository) *Service {
+	return NewService(teams, members, &mockTxManager{teams: teams, members: members})
+}
 
 type mockTeamRepo struct {
 	createFn     func(ctx context.Context, t *domainteam.Team) error
@@ -137,7 +158,7 @@ func (m *mockMemberRepo) CountByTeamID(ctx context.Context, teamID string) (int,
 func TestService_CreateTeam_Success(t *testing.T) {
 	teamRepo := &mockTeamRepo{}
 	memberRepo := &mockMemberRepo{}
-	svc := NewService(teamRepo, memberRepo)
+	svc := newTestService(teamRepo, memberRepo)
 
 	tm, err := svc.CreateTeam(context.Background(), "user-1", "My Team")
 	assert.NoError(t, err)
@@ -150,7 +171,7 @@ func TestService_CreateTeam_Success(t *testing.T) {
 func TestService_CreateTeam_ValidationError(t *testing.T) {
 	teamRepo := &mockTeamRepo{}
 	memberRepo := &mockMemberRepo{}
-	svc := NewService(teamRepo, memberRepo)
+	svc := newTestService(teamRepo, memberRepo)
 
 	_, err := svc.CreateTeam(context.Background(), "user-1", "A") // too short
 	assert.Error(t, err)
@@ -160,7 +181,7 @@ func TestService_CreateTeam_ValidationError(t *testing.T) {
 func TestService_CreateTeam_EmptyName(t *testing.T) {
 	teamRepo := &mockTeamRepo{}
 	memberRepo := &mockMemberRepo{}
-	svc := NewService(teamRepo, memberRepo)
+	svc := newTestService(teamRepo, memberRepo)
 
 	_, err := svc.CreateTeam(context.Background(), "user-1", "")
 	assert.Error(t, err)
@@ -177,7 +198,7 @@ func TestService_CreateTeam_AddsOwnerAsMember(t *testing.T) {
 			return nil
 		},
 	}
-	svc := NewService(teamRepo, memberRepo)
+	svc := newTestService(teamRepo, memberRepo)
 
 	_, err := svc.CreateTeam(context.Background(), "user-1", "My Team")
 	assert.NoError(t, err)
@@ -186,6 +207,43 @@ func TestService_CreateTeam_AddsOwnerAsMember(t *testing.T) {
 	assert.Equal(t, domainteam.RoleOwner, addedMember.Role)
 	assert.Equal(t, domainteam.InviteAccepted, addedMember.InviteStatus)
 	assert.NotNil(t, addedMember.JoinedAt)
+}
+
+// TestService_CreateTeam_RollsBackWhenOwnerAddFails proves the team is NOT
+// "successfully created" when adding the owner member fails. The owner-add error is
+// surfaced to the caller (so the real TxManager would roll back the team insert too),
+// instead of being swallowed and leaving an orphaned, owner-less team.
+func TestService_CreateTeam_RollsBackWhenOwnerAddFails(t *testing.T) {
+	teamCreated := false
+	addAttempted := false
+	ownerAddErr := errors.New("owner insert failed")
+
+	teamRepo := &mockTeamRepo{
+		createFn: func(_ context.Context, tm *domainteam.Team) error {
+			teamCreated = true
+			tm.ID = "team-1"
+			return nil
+		},
+	}
+	memberRepo := &mockMemberRepo{
+		addFn: func(_ context.Context, _ *domainteam.TeamMember) error {
+			addAttempted = true
+			return ownerAddErr
+		},
+	}
+	svc := newTestService(teamRepo, memberRepo)
+
+	tm, err := svc.CreateTeam(context.Background(), "user-1", "My Team")
+
+	// The whole operation fails: no team is returned and the underlying error surfaces.
+	assert.Error(t, err)
+	assert.Nil(t, tm)
+	assert.ErrorIs(t, err, ownerAddErr)
+
+	// Both writes were attempted inside the same unit of work; because the second
+	// failed, the real TxManager rolls back the first — the team is not committed.
+	assert.True(t, teamCreated, "team create should have been attempted in the tx")
+	assert.True(t, addAttempted, "owner add should have been attempted in the tx")
 }
 
 // --- GetTeam ---
@@ -205,7 +263,7 @@ func TestService_GetTeam_Success(t *testing.T) {
 			return &domainteam.Team{ID: id, Name: "Test Team"}, nil
 		},
 	}
-	svc := NewService(teamRepo, memberRepoWithMember(domainteam.RoleMember))
+	svc := newTestService(teamRepo, memberRepoWithMember(domainteam.RoleMember))
 
 	tm, err := svc.GetTeam(context.Background(), "user-1", "team-1")
 	assert.NoError(t, err)
@@ -220,7 +278,7 @@ func TestService_GetTeam_NonMemberForbidden(t *testing.T) {
 		},
 	}
 	// default mockMemberRepo: FindByTeamAndUser returns ErrNotFound (not a member)
-	svc := NewService(teamRepo, &mockMemberRepo{})
+	svc := newTestService(teamRepo, &mockMemberRepo{})
 
 	_, err := svc.GetTeam(context.Background(), "outsider", "team-1")
 	assert.ErrorIs(t, err, domain.ErrForbidden)
@@ -228,7 +286,7 @@ func TestService_GetTeam_NonMemberForbidden(t *testing.T) {
 
 func TestService_GetTeam_NotFound(t *testing.T) {
 	// Member exists, but the team itself is missing.
-	svc := NewService(&mockTeamRepo{}, memberRepoWithMember(domainteam.RoleMember))
+	svc := newTestService(&mockTeamRepo{}, memberRepoWithMember(domainteam.RoleMember))
 
 	_, err := svc.GetTeam(context.Background(), "user-1", "nonexistent")
 	assert.Error(t, err)
@@ -242,7 +300,7 @@ func TestService_GetTeamBySlug_Success(t *testing.T) {
 			return &domainteam.Team{ID: "team-1", Slug: slug}, nil
 		},
 	}
-	svc := NewService(teamRepo, memberRepoWithMember(domainteam.RoleMember))
+	svc := newTestService(teamRepo, memberRepoWithMember(domainteam.RoleMember))
 
 	tm, err := svc.GetTeamBySlug(context.Background(), "user-1", "my-team")
 	assert.NoError(t, err)
@@ -256,7 +314,7 @@ func TestService_GetTeamBySlug_NonMemberForbidden(t *testing.T) {
 			return &domainteam.Team{ID: "team-1", Slug: slug}, nil
 		},
 	}
-	svc := NewService(teamRepo, &mockMemberRepo{})
+	svc := newTestService(teamRepo, &mockMemberRepo{})
 
 	_, err := svc.GetTeamBySlug(context.Background(), "outsider", "my-team")
 	assert.ErrorIs(t, err, domain.ErrForbidden)
@@ -275,7 +333,7 @@ func TestService_UpdateTeam_Success(t *testing.T) {
 			return &domainteam.TeamMember{Role: domainteam.RoleOwner}, nil
 		},
 	}
-	svc := NewService(teamRepo, memberRepo)
+	svc := newTestService(teamRepo, memberRepo)
 
 	tm, err := svc.UpdateTeam(context.Background(), "user-1", "team-1", "New Name")
 	assert.NoError(t, err)
@@ -294,7 +352,7 @@ func TestService_UpdateTeam_AdminCanUpdate(t *testing.T) {
 			return &domainteam.TeamMember{Role: domainteam.RoleAdmin}, nil
 		},
 	}
-	svc := NewService(teamRepo, memberRepo)
+	svc := newTestService(teamRepo, memberRepo)
 
 	tm, err := svc.UpdateTeam(context.Background(), "user-1", "team-1", "New Name")
 	assert.NoError(t, err)
@@ -307,7 +365,7 @@ func TestService_UpdateTeam_MemberForbidden(t *testing.T) {
 			return &domainteam.TeamMember{Role: domainteam.RoleMember}, nil
 		},
 	}
-	svc := NewService(&mockTeamRepo{}, memberRepo)
+	svc := newTestService(&mockTeamRepo{}, memberRepo)
 
 	_, err := svc.UpdateTeam(context.Background(), "user-1", "team-1", "New Name")
 	assert.Error(t, err)
@@ -315,7 +373,7 @@ func TestService_UpdateTeam_MemberForbidden(t *testing.T) {
 }
 
 func TestService_UpdateTeam_NotAMember(t *testing.T) {
-	svc := NewService(&mockTeamRepo{}, &mockMemberRepo{})
+	svc := newTestService(&mockTeamRepo{}, &mockMemberRepo{})
 
 	_, err := svc.UpdateTeam(context.Background(), "user-1", "team-1", "New Name")
 	assert.Error(t, err)
@@ -337,7 +395,7 @@ func TestService_DeleteTeam_Success(t *testing.T) {
 			return &domainteam.TeamMember{Role: domainteam.RoleOwner}, nil
 		},
 	}
-	svc := NewService(teamRepo, memberRepo)
+	svc := newTestService(teamRepo, memberRepo)
 
 	err := svc.DeleteTeam(context.Background(), "user-1", "team-1")
 	assert.NoError(t, err)
@@ -350,7 +408,7 @@ func TestService_DeleteTeam_AdminForbidden(t *testing.T) {
 			return &domainteam.TeamMember{Role: domainteam.RoleAdmin}, nil
 		},
 	}
-	svc := NewService(&mockTeamRepo{}, memberRepo)
+	svc := newTestService(&mockTeamRepo{}, memberRepo)
 
 	err := svc.DeleteTeam(context.Background(), "user-1", "team-1")
 	assert.Error(t, err)
@@ -363,7 +421,7 @@ func TestService_DeleteTeam_MemberForbidden(t *testing.T) {
 			return &domainteam.TeamMember{Role: domainteam.RoleMember}, nil
 		},
 	}
-	svc := NewService(&mockTeamRepo{}, memberRepo)
+	svc := newTestService(&mockTeamRepo{}, memberRepo)
 
 	err := svc.DeleteTeam(context.Background(), "user-1", "team-1")
 	assert.Error(t, err)
@@ -381,7 +439,7 @@ func TestService_ListUserTeams_Success(t *testing.T) {
 			}, nil
 		},
 	}
-	svc := NewService(teamRepo, &mockMemberRepo{})
+	svc := newTestService(teamRepo, &mockMemberRepo{})
 
 	teams, err := svc.ListUserTeams(context.Background(), "user-1")
 	assert.NoError(t, err)
@@ -404,7 +462,7 @@ func TestService_InviteMember_Success(t *testing.T) {
 			return 2, nil
 		},
 	}
-	svc := NewService(teamRepo, memberRepo)
+	svc := newTestService(teamRepo, memberRepo)
 
 	invite, err := svc.InviteMember(context.Background(), "user-1", "team-1", "new@example.com", domainteam.RoleMember)
 	assert.NoError(t, err)
@@ -428,7 +486,7 @@ func TestService_InviteMember_TeamFull(t *testing.T) {
 			return 3, nil
 		},
 	}
-	svc := NewService(teamRepo, memberRepo)
+	svc := newTestService(teamRepo, memberRepo)
 
 	_, err := svc.InviteMember(context.Background(), "user-1", "team-1", "new@example.com", domainteam.RoleMember)
 	assert.Error(t, err)
@@ -441,7 +499,7 @@ func TestService_InviteMember_NoPermission(t *testing.T) {
 			return &domainteam.TeamMember{Role: domainteam.RoleMember}, nil
 		},
 	}
-	svc := NewService(&mockTeamRepo{}, memberRepo)
+	svc := newTestService(&mockTeamRepo{}, memberRepo)
 
 	_, err := svc.InviteMember(context.Background(), "user-1", "team-1", "new@example.com", domainteam.RoleMember)
 	assert.Error(t, err)
@@ -449,7 +507,7 @@ func TestService_InviteMember_NoPermission(t *testing.T) {
 }
 
 func TestService_InviteMember_NotAMember(t *testing.T) {
-	svc := NewService(&mockTeamRepo{}, &mockMemberRepo{})
+	svc := newTestService(&mockTeamRepo{}, &mockMemberRepo{})
 
 	_, err := svc.InviteMember(context.Background(), "user-1", "team-1", "new@example.com", domainteam.RoleMember)
 	assert.Error(t, err)
@@ -470,7 +528,7 @@ func TestService_InviteMember_AdminCanInvite(t *testing.T) {
 			return 1, nil
 		},
 	}
-	svc := NewService(teamRepo, memberRepo)
+	svc := newTestService(teamRepo, memberRepo)
 
 	invite, err := svc.InviteMember(context.Background(), "user-1", "team-1", "new@example.com", domainteam.RoleMember)
 	assert.NoError(t, err)
@@ -496,7 +554,7 @@ func TestService_AcceptInvite_Success(t *testing.T) {
 			return nil
 		},
 	}
-	svc := NewService(&mockTeamRepo{}, memberRepo)
+	svc := newTestService(&mockTeamRepo{}, memberRepo)
 
 	member, err := svc.AcceptInvite(context.Background(), "user-2", "valid-token")
 	assert.NoError(t, err)
@@ -507,7 +565,7 @@ func TestService_AcceptInvite_Success(t *testing.T) {
 }
 
 func TestService_AcceptInvite_InvalidToken(t *testing.T) {
-	svc := NewService(&mockTeamRepo{}, &mockMemberRepo{})
+	svc := newTestService(&mockTeamRepo{}, &mockMemberRepo{})
 
 	_, err := svc.AcceptInvite(context.Background(), "user-2", "invalid-token")
 	assert.Error(t, err)
@@ -522,7 +580,7 @@ func TestService_AcceptInvite_AlreadyAccepted(t *testing.T) {
 			}, nil
 		},
 	}
-	svc := NewService(&mockTeamRepo{}, memberRepo)
+	svc := newTestService(&mockTeamRepo{}, memberRepo)
 
 	_, err := svc.AcceptInvite(context.Background(), "user-2", "used-token")
 	assert.Error(t, err)
@@ -545,7 +603,7 @@ func TestService_DeclineInvite_Success(t *testing.T) {
 			return nil
 		},
 	}
-	svc := NewService(&mockTeamRepo{}, memberRepo)
+	svc := newTestService(&mockTeamRepo{}, memberRepo)
 
 	err := svc.DeclineInvite(context.Background(), "valid-token")
 	assert.NoError(t, err)
@@ -553,7 +611,7 @@ func TestService_DeclineInvite_Success(t *testing.T) {
 }
 
 func TestService_DeclineInvite_InvalidToken(t *testing.T) {
-	svc := NewService(&mockTeamRepo{}, &mockMemberRepo{})
+	svc := newTestService(&mockTeamRepo{}, &mockMemberRepo{})
 
 	err := svc.DeclineInvite(context.Background(), "invalid-token")
 	assert.Error(t, err)
@@ -568,7 +626,7 @@ func TestService_DeclineInvite_AlreadyAccepted(t *testing.T) {
 			}, nil
 		},
 	}
-	svc := NewService(&mockTeamRepo{}, memberRepo)
+	svc := newTestService(&mockTeamRepo{}, memberRepo)
 
 	err := svc.DeclineInvite(context.Background(), "used-token")
 	assert.Error(t, err)
@@ -595,7 +653,7 @@ func TestService_RemoveMember_OwnerRemovesMember(t *testing.T) {
 			return nil
 		},
 	}
-	svc := NewService(&mockTeamRepo{}, memberRepo)
+	svc := newTestService(&mockTeamRepo{}, memberRepo)
 
 	err := svc.RemoveMember(context.Background(), "owner-1", "team-1", "member-1")
 	assert.NoError(t, err)
@@ -610,7 +668,7 @@ func TestService_RemoveMember_CannotRemoveOwner(t *testing.T) {
 			return &domainteam.TeamMember{Role: domainteam.RoleOwner}, nil
 		},
 	}
-	svc := NewService(&mockTeamRepo{}, memberRepo)
+	svc := newTestService(&mockTeamRepo{}, memberRepo)
 
 	err := svc.RemoveMember(context.Background(), "owner-1", "team-1", "owner-1")
 	assert.Error(t, err)
@@ -623,7 +681,7 @@ func TestService_RemoveMember_MemberNoPermission(t *testing.T) {
 			return &domainteam.TeamMember{Role: domainteam.RoleMember}, nil
 		},
 	}
-	svc := NewService(&mockTeamRepo{}, memberRepo)
+	svc := newTestService(&mockTeamRepo{}, memberRepo)
 
 	err := svc.RemoveMember(context.Background(), "member-1", "team-1", "member-2")
 	assert.Error(t, err)
@@ -636,7 +694,7 @@ func TestService_RemoveMember_AdminCannotRemoveAdmin(t *testing.T) {
 			return &domainteam.TeamMember{Role: domainteam.RoleAdmin}, nil
 		},
 	}
-	svc := NewService(&mockTeamRepo{}, memberRepo)
+	svc := newTestService(&mockTeamRepo{}, memberRepo)
 
 	err := svc.RemoveMember(context.Background(), "admin-1", "team-1", "admin-2")
 	assert.Error(t, err)
@@ -652,7 +710,7 @@ func TestService_RemoveMember_AdminRemovesMember(t *testing.T) {
 			return &domainteam.TeamMember{Role: domainteam.RoleMember}, nil
 		},
 	}
-	svc := NewService(&mockTeamRepo{}, memberRepo)
+	svc := newTestService(&mockTeamRepo{}, memberRepo)
 
 	err := svc.RemoveMember(context.Background(), "admin-1", "team-1", "member-1")
 	assert.NoError(t, err)
@@ -674,7 +732,7 @@ func TestService_UpdateMemberRole_OwnerChangesRole(t *testing.T) {
 			return nil
 		},
 	}
-	svc := NewService(&mockTeamRepo{}, memberRepo)
+	svc := newTestService(&mockTeamRepo{}, memberRepo)
 
 	err := svc.UpdateMemberRole(context.Background(), "owner-1", "team-1", "member-1", domainteam.RoleAdmin)
 	assert.NoError(t, err)
@@ -687,7 +745,7 @@ func TestService_UpdateMemberRole_AdminForbidden(t *testing.T) {
 			return &domainteam.TeamMember{Role: domainteam.RoleAdmin}, nil
 		},
 	}
-	svc := NewService(&mockTeamRepo{}, memberRepo)
+	svc := newTestService(&mockTeamRepo{}, memberRepo)
 
 	err := svc.UpdateMemberRole(context.Background(), "admin-1", "team-1", "member-1", domainteam.RoleAdmin)
 	assert.Error(t, err)
@@ -700,7 +758,7 @@ func TestService_UpdateMemberRole_MemberForbidden(t *testing.T) {
 			return &domainteam.TeamMember{Role: domainteam.RoleMember}, nil
 		},
 	}
-	svc := NewService(&mockTeamRepo{}, memberRepo)
+	svc := newTestService(&mockTeamRepo{}, memberRepo)
 
 	err := svc.UpdateMemberRole(context.Background(), "member-1", "team-1", "member-2", domainteam.RoleAdmin)
 	assert.Error(t, err)
@@ -714,7 +772,7 @@ func TestService_UpdateMemberRole_CannotChangeOwnerRole(t *testing.T) {
 			return &domainteam.TeamMember{Role: domainteam.RoleOwner}, nil
 		},
 	}
-	svc := NewService(&mockTeamRepo{}, memberRepo)
+	svc := newTestService(&mockTeamRepo{}, memberRepo)
 
 	err := svc.UpdateMemberRole(context.Background(), "owner-1", "team-1", "owner-1", domainteam.RoleAdmin)
 	assert.Error(t, err)
@@ -730,7 +788,7 @@ func TestService_UpdateMemberRole_CannotAssignOwner(t *testing.T) {
 			return &domainteam.TeamMember{Role: domainteam.RoleMember}, nil
 		},
 	}
-	svc := NewService(&mockTeamRepo{}, memberRepo)
+	svc := newTestService(&mockTeamRepo{}, memberRepo)
 
 	err := svc.UpdateMemberRole(context.Background(), "owner-1", "team-1", "member-1", domainteam.RoleOwner)
 	assert.Error(t, err)
@@ -743,7 +801,7 @@ func TestService_UpdateMemberRole_InvalidRole(t *testing.T) {
 			return &domainteam.TeamMember{Role: domainteam.RoleOwner}, nil
 		},
 	}
-	svc := NewService(&mockTeamRepo{}, memberRepo)
+	svc := newTestService(&mockTeamRepo{}, memberRepo)
 
 	err := svc.UpdateMemberRole(context.Background(), "owner-1", "team-1", "member-1", domainteam.Role("superadmin"))
 	assert.Error(t, err)
@@ -765,7 +823,7 @@ func TestService_ListMembers_Success(t *testing.T) {
 			return members, 2, nil
 		},
 	}
-	svc := NewService(&mockTeamRepo{}, memberRepo)
+	svc := newTestService(&mockTeamRepo{}, memberRepo)
 
 	result, total, err := svc.ListMembers(context.Background(), "user-1", "team-1", 0, 20)
 	assert.NoError(t, err)
@@ -774,7 +832,7 @@ func TestService_ListMembers_Success(t *testing.T) {
 }
 
 func TestService_ListMembers_NotAMember(t *testing.T) {
-	svc := NewService(&mockTeamRepo{}, &mockMemberRepo{})
+	svc := newTestService(&mockTeamRepo{}, &mockMemberRepo{})
 
 	_, _, err := svc.ListMembers(context.Background(), "outsider", "team-1", 0, 20)
 	assert.Error(t, err)
@@ -795,7 +853,7 @@ func TestService_LeaveTeam_MemberLeaves(t *testing.T) {
 			return nil
 		},
 	}
-	svc := NewService(&mockTeamRepo{}, memberRepo)
+	svc := newTestService(&mockTeamRepo{}, memberRepo)
 
 	err := svc.LeaveTeam(context.Background(), "user-1", "team-1")
 	assert.NoError(t, err)
@@ -809,7 +867,7 @@ func TestService_LeaveTeam_AdminLeaves(t *testing.T) {
 			return &domainteam.TeamMember{Role: domainteam.RoleAdmin}, nil
 		},
 	}
-	svc := NewService(&mockTeamRepo{}, memberRepo)
+	svc := newTestService(&mockTeamRepo{}, memberRepo)
 
 	err := svc.LeaveTeam(context.Background(), "admin-1", "team-1")
 	assert.NoError(t, err)
@@ -821,7 +879,7 @@ func TestService_LeaveTeam_OwnerCannotLeave(t *testing.T) {
 			return &domainteam.TeamMember{Role: domainteam.RoleOwner}, nil
 		},
 	}
-	svc := NewService(&mockTeamRepo{}, memberRepo)
+	svc := newTestService(&mockTeamRepo{}, memberRepo)
 
 	err := svc.LeaveTeam(context.Background(), "owner-1", "team-1")
 	assert.Error(t, err)
@@ -829,7 +887,7 @@ func TestService_LeaveTeam_OwnerCannotLeave(t *testing.T) {
 }
 
 func TestService_LeaveTeam_NotAMember(t *testing.T) {
-	svc := NewService(&mockTeamRepo{}, &mockMemberRepo{})
+	svc := newTestService(&mockTeamRepo{}, &mockMemberRepo{})
 
 	err := svc.LeaveTeam(context.Background(), "outsider", "team-1")
 	assert.Error(t, err)

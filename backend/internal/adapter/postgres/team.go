@@ -10,13 +10,21 @@ import (
 )
 
 // TeamRepository implements repository.TeamRepository using PostgreSQL.
+// It holds a DBTX (not a concrete *sql.DB) so the same code runs against either the
+// connection pool or an open transaction — that is what lets it join a shared tx.
 type TeamRepository struct {
-	db *sql.DB
+	db DBTX
 }
 
-// NewTeamRepository creates a new PostgreSQL-backed team repository.
+// NewTeamRepository creates a new PostgreSQL-backed team repository bound to the pool.
 func NewTeamRepository(db *sql.DB) *TeamRepository {
 	return &TeamRepository{db: db}
+}
+
+// newTeamRepositoryTx creates a team repository bound to an open transaction, so its
+// writes participate in that transaction. Used by TxManager.
+func newTeamRepositoryTx(tx DBTX) *TeamRepository {
+	return &TeamRepository{db: tx}
 }
 
 func (r *TeamRepository) Create(ctx context.Context, t *team.Team) error {
@@ -118,13 +126,20 @@ func (r *TeamRepository) ListByUserID(ctx context.Context, userID string) ([]*te
 }
 
 // TeamMemberRepository implements repository.TeamMemberRepository using PostgreSQL.
+// It holds a DBTX so its writes can run on either the pool or an open transaction.
 type TeamMemberRepository struct {
-	db *sql.DB
+	db DBTX
 }
 
-// NewTeamMemberRepository creates a new PostgreSQL-backed team member repository.
+// NewTeamMemberRepository creates a new PostgreSQL-backed team member repository bound to the pool.
 func NewTeamMemberRepository(db *sql.DB) *TeamMemberRepository {
 	return &TeamMemberRepository{db: db}
+}
+
+// newTeamMemberRepositoryTx creates a team member repository bound to an open
+// transaction, so its writes participate in that transaction. Used by TxManager.
+func newTeamMemberRepositoryTx(tx DBTX) *TeamMemberRepository {
+	return &TeamMemberRepository{db: tx}
 }
 
 func (r *TeamMemberRepository) Add(ctx context.Context, member *team.TeamMember) error {

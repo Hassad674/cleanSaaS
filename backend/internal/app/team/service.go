@@ -14,40 +14,54 @@ import (
 type Service struct {
 	teams   repository.TeamRepository
 	members repository.TeamMemberRepository
+	tx      repository.TxManager
 }
 
-// NewService creates a new team service with the given repositories.
-func NewService(teams repository.TeamRepository, members repository.TeamMemberRepository) *Service {
+// NewService creates a new team service with the given repositories and transaction
+// manager. The tx manager makes multi-write use cases (e.g. CreateTeam) atomic; the
+// service depends only on the repository.TxManager interface, never on database/sql.
+func NewService(teams repository.TeamRepository, members repository.TeamMemberRepository, tx repository.TxManager) *Service {
 	return &Service{
 		teams:   teams,
 		members: members,
+		tx:      tx,
 	}
 }
 
 // CreateTeam creates a new team and adds the creating user as the owner member.
+//
+// Both writes run inside ONE transaction via the TxManager: if adding the owner fails,
+// the team insert is rolled back too, so a team can never be persisted without its
+// owner (no orphaned, owner-less team on a mid-flow failure or crash).
 func (s *Service) CreateTeam(ctx context.Context, userID, name string) (*domainteam.Team, error) {
 	t, err := domainteam.NewTeam(name, userID)
 	if err != nil {
 		return nil, fmt.Errorf("creating team: %w", err)
 	}
 
-	if err := s.teams.Create(ctx, t); err != nil {
-		return nil, fmt.Errorf("persisting team: %w", err)
-	}
+	err = s.tx.WithTeamTx(ctx, func(teams repository.TeamRepository, members repository.TeamMemberRepository) error {
+		if err := teams.Create(ctx, t); err != nil {
+			return fmt.Errorf("persisting team: %w", err)
+		}
 
-	// Add the creator as the owner member
-	now := time.Now()
-	ownerMember := &domainteam.TeamMember{
-		TeamID:       t.ID,
-		UserID:       userID,
-		Role:         domainteam.RoleOwner,
-		InviteStatus: domainteam.InviteAccepted,
-		JoinedAt:     &now,
-		CreatedAt:    now,
-	}
+		// Add the creator as the owner member, in the same transaction.
+		now := time.Now()
+		ownerMember := &domainteam.TeamMember{
+			TeamID:       t.ID,
+			UserID:       userID,
+			Role:         domainteam.RoleOwner,
+			InviteStatus: domainteam.InviteAccepted,
+			JoinedAt:     &now,
+			CreatedAt:    now,
+		}
 
-	if err := s.members.Add(ctx, ownerMember); err != nil {
-		return nil, fmt.Errorf("adding owner as member: %w", err)
+		if err := members.Add(ctx, ownerMember); err != nil {
+			return fmt.Errorf("adding owner as member: %w", err)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
 	}
 
 	return t, nil

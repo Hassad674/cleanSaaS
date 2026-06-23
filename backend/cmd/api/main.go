@@ -111,7 +111,8 @@ func main() {
 	// Teams (optional)
 	teamRepo := postgres.NewTeamRepository(db)
 	memberRepo := postgres.NewTeamMemberRepository(db)
-	teamSvc := appteam.NewService(teamRepo, memberRepo)
+	txManager := postgres.NewTxManager(db)
+	teamSvc := appteam.NewService(teamRepo, memberRepo, txManager)
 
 	// App services
 	authSvc := appauth.NewService(userRepo, passwordResetRepo, emailVerificationRepo, emailSvc, jwtMaker, cfg.FrontendURL)
