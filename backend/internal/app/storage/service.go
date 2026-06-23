@@ -17,10 +17,14 @@ import (
 
 type Service struct {
 	storage service.StorageService
-	files   repository.FileRepository
+	files   repository.FileScope
 }
 
-func NewService(storage service.StorageService, files repository.FileRepository) *Service {
+// NewService wires the storage use cases. files is an org-scoped unit-of-work: each
+// metadata operation runs inside a transaction bound to the caller's active
+// organization, so PostgreSQL row-level security enforces tenant isolation on every
+// file query (in addition to the repository's own org_id filter).
+func NewService(storage service.StorageService, files repository.FileScope) *Service {
 	return &Service{storage: storage, files: files}
 }
 
@@ -61,7 +65,10 @@ func (s *Service) Upload(ctx context.Context, userID, fileName, contentType stri
 		URL:         url,
 	}
 
-	if err := s.files.Create(ctx, file); err != nil {
+	err = s.files.WithOrgFiles(ctx, func(files repository.FileRepository) error {
+		return files.Create(ctx, file)
+	})
+	if err != nil {
 		// Best-effort cleanup of uploaded object
 		_ = s.storage.Delete(ctx, key)
 		return nil, fmt.Errorf("saving file metadata: %w", err)
@@ -71,35 +78,47 @@ func (s *Service) Upload(ctx context.Context, userID, fileName, contentType stri
 }
 
 func (s *Service) Delete(ctx context.Context, userID, fileID string) error {
-	file, err := s.files.FindByID(ctx, fileID)
-	if err != nil {
-		return err
-	}
-
-	if file.UserID != userID {
-		return domain.ErrForbidden
-	}
-
-	if err := s.storage.Delete(ctx, file.Key); err != nil {
-		return fmt.Errorf("deleting file from storage: %w", err)
-	}
-
-	return s.files.Delete(ctx, fileID)
+	return s.files.WithOrgFiles(ctx, func(files repository.FileRepository) error {
+		file, err := files.FindByID(ctx, fileID)
+		if err != nil {
+			return err
+		}
+		if file.UserID != userID {
+			return domain.ErrForbidden
+		}
+		if err := s.storage.Delete(ctx, file.Key); err != nil {
+			return fmt.Errorf("deleting file from storage: %w", err)
+		}
+		return files.Delete(ctx, fileID)
+	})
 }
 
 func (s *Service) List(ctx context.Context, userID string, offset, limit int) ([]*domainstorage.File, int, error) {
-	return s.files.ListByUserID(ctx, userID, offset, limit)
+	var files []*domainstorage.File
+	var total int
+	err := s.files.WithOrgFiles(ctx, func(repo repository.FileRepository) error {
+		var e error
+		files, total, e = repo.ListByUserID(ctx, userID, offset, limit)
+		return e
+	})
+	return files, total, err
 }
 
 func (s *Service) GetByID(ctx context.Context, userID, fileID string) (*domainstorage.File, error) {
-	file, err := s.files.FindByID(ctx, fileID)
+	var file *domainstorage.File
+	err := s.files.WithOrgFiles(ctx, func(files repository.FileRepository) error {
+		f, err := files.FindByID(ctx, fileID)
+		if err != nil {
+			return err
+		}
+		if f.UserID != userID {
+			return domain.ErrForbidden
+		}
+		file = f
+		return nil
+	})
 	if err != nil {
 		return nil, err
 	}
-
-	if file.UserID != userID {
-		return nil, domain.ErrForbidden
-	}
-
 	return file, nil
 }

@@ -9,6 +9,7 @@ import (
 
 	"github.com/hassad/boilerplateSaaS/backend/internal/domain"
 	domainnotif "github.com/hassad/boilerplateSaaS/backend/internal/domain/notification"
+	"github.com/hassad/boilerplateSaaS/backend/internal/port/repository"
 )
 
 // Mocks
@@ -66,11 +67,21 @@ func (m *mockNotifRepo) UnreadCount(ctx context.Context, userID string) (int, er
 	return 0, nil
 }
 
+// mockNotifScope adapts a plain mockNotifRepo into a repository.NotificationScope
+// by invoking the callback with the underlying repo — unit tests need no real tx.
+type mockNotifScope struct{ repo *mockNotifRepo }
+
+func (s *mockNotifScope) WithOrgNotifications(ctx context.Context, fn func(notifications repository.NotificationRepository) error) error {
+	return fn(s.repo)
+}
+
+func scope(repo *mockNotifRepo) *mockNotifScope { return &mockNotifScope{repo: repo} }
+
 // Tests
 
 func TestNotificationService_Send_Success(t *testing.T) {
 	repo := &mockNotifRepo{}
-	svc := NewService(repo)
+	svc := NewService(scope(repo))
 
 	n, err := svc.Send(context.Background(), "user-1", "info", "Welcome!", "Thanks for signing up")
 	assert.NoError(t, err)
@@ -90,7 +101,7 @@ func TestNotificationService_MarkAsRead_Success(t *testing.T) {
 			return nil
 		},
 	}
-	svc := NewService(repo)
+	svc := NewService(scope(repo))
 
 	err := svc.MarkAsRead(context.Background(), "user-1", "notif-1")
 	assert.NoError(t, err)
@@ -103,7 +114,7 @@ func TestNotificationService_MarkAsRead_Forbidden(t *testing.T) {
 			return &domainnotif.Notification{ID: "notif-1", UserID: "user-2"}, nil
 		},
 	}
-	svc := NewService(repo)
+	svc := NewService(scope(repo))
 
 	err := svc.MarkAsRead(context.Background(), "user-1", "notif-1")
 	assert.ErrorIs(t, err, domain.ErrForbidden)
@@ -115,7 +126,7 @@ func TestNotificationService_UnreadCount(t *testing.T) {
 			return 5, nil
 		},
 	}
-	svc := NewService(repo)
+	svc := NewService(scope(repo))
 
 	count, err := svc.UnreadCount(context.Background(), "user-1")
 	assert.NoError(t, err)

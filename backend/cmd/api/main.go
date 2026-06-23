@@ -20,6 +20,7 @@ import (
 	appbilling "github.com/hassad/boilerplateSaaS/backend/internal/app/billing"
 	appblog "github.com/hassad/boilerplateSaaS/backend/internal/app/blog"
 	appnotif "github.com/hassad/boilerplateSaaS/backend/internal/app/notification"
+	apporg "github.com/hassad/boilerplateSaaS/backend/internal/app/org"
 	appstorage "github.com/hassad/boilerplateSaaS/backend/internal/app/storage"
 	appteam "github.com/hassad/boilerplateSaaS/backend/internal/app/team"
 	appuser "github.com/hassad/boilerplateSaaS/backend/internal/app/user"
@@ -50,6 +51,17 @@ func main() {
 	emailVerificationRepo := postgres.NewEmailVerificationRepository(db)
 	refreshTokenRepo := postgres.NewRefreshTokenRepository(db)
 
+	// Organizations (the tenant). orgScope is the org-scoped unit-of-work that runs
+	// tenant repository work under the restricted RLS role + active-org GUC, so
+	// PostgreSQL row-level security enforces tenant isolation as the last line of
+	// defense. txManager is the privileged (RLS-bypassing) unit-of-work used by
+	// system flows like signup and team-create.
+	orgRepo := postgres.NewOrganizationRepository(db)
+	orgMemberRepo := postgres.NewOrganizationMemberRepository(db)
+	orgScope := postgres.NewOrgScope(db)
+	txManager := postgres.NewTxManager(db)
+	orgSvc := apporg.NewService(orgRepo, orgMemberRepo)
+
 	// JWT (short-lived access tokens with configurable TTL/iss/aud)
 	jwtMaker := jwt.NewMakerWithOptions(cfg.JWTSecret, cfg.AccessTokenTTL, cfg.JWTIssuer, cfg.JWTAudience)
 
@@ -59,7 +71,10 @@ func main() {
 		emailSvc = resend.NewEmailServiceWithTimeout(cfg.ResendKey, cfg.ExternalCallTimeout)
 	}
 
-	// Billing repositories + service (optional — only if Stripe key set)
+	// Billing repositories + service (optional — only if Stripe key set).
+	// Subscriptions are tenant-scoped: the request path uses orgScope (RLS), the
+	// Stripe webhook (system path) uses the raw repository + resolves org from the
+	// customer's user, so subscriptions are stamped with a tenant on creation.
 	var billingSvc *appbilling.Service
 	if cfg.StripeKey != "" {
 		subscriptionRepo := postgres.NewSubscriptionRepository(db)
@@ -67,19 +82,29 @@ func main() {
 		invoiceRepo := postgres.NewInvoiceRepository(db)
 		processedEventRepo := postgres.NewProcessedEventRepository(db)
 		paymentSvc := adaptstripe.NewPaymentServiceWithTimeout(cfg.StripeKey, cfg.StripeWebhookSecret, cfg.ExternalCallTimeout)
-		billingSvc = appbilling.NewService(userRepo, subscriptionRepo, planRepo, invoiceRepo, processedEventRepo, paymentSvc, cfg.FrontendURL)
+		billingSvc = appbilling.NewService(appbilling.Deps{
+			Users:           userRepo,
+			Orgs:            orgRepo,
+			Subscriptions:   subscriptionRepo,
+			SubscriptionTx:  orgScope,
+			Plans:           planRepo,
+			Invoices:        invoiceRepo,
+			ProcessedEvents: processedEventRepo,
+			Payment:         paymentSvc,
+			FrontendURL:     cfg.FrontendURL,
+		})
 	}
 
-	// Storage (optional — only if R2 keys set)
+	// Storage (optional — only if R2 keys set). File metadata is org-scoped via
+	// orgScope so RLS isolates each tenant's files.
 	var storageSvc *appstorage.Service
 	if cfg.R2AccessKey != "" {
 		r2Client := adaptr2.NewClient(cfg.R2AccountID, cfg.R2AccessKey, cfg.R2SecretKey)
 		r2Storage := adaptr2.NewStorageServiceWithTimeout(r2Client, cfg.R2BucketName, cfg.R2PublicURL, cfg.ExternalCallTimeout)
-		fileRepo := postgres.NewFileRepository(db)
-		storageSvc = appstorage.NewService(r2Storage, fileRepo)
+		storageSvc = appstorage.NewService(r2Storage, orgScope)
 	}
 
-	// AI Chat (optional — only if Gemini key set)
+	// AI Chat (optional — only if Gemini key set). Conversations are org-scoped.
 	var aiSvc *appai.Service
 	var demoAI service.AIService
 	if cfg.GeminiKey != "" {
@@ -89,14 +114,12 @@ func main() {
 		} else {
 			geminiAI := adaptgemini.NewAIServiceWithTimeout(geminiClient, cfg.ExternalCallTimeout)
 			demoAI = geminiAI // expose for the public demo endpoint
-			conversationRepo := postgres.NewConversationRepository(db)
-			aiSvc = appai.NewService(conversationRepo, geminiAI)
+			aiSvc = appai.NewService(orgScope, geminiAI)
 		}
 	}
 
-	// Notifications
-	notificationRepo := postgres.NewNotificationRepository(db)
-	notifSvc := appnotif.NewService(notificationRepo)
+	// Notifications (org-scoped).
+	notifSvc := appnotif.NewService(orgScope)
 
 	// WebSocket hub (real-time communication)
 	wsHub := ws.NewHub()
@@ -112,15 +135,18 @@ func main() {
 	// Teams (optional)
 	teamRepo := postgres.NewTeamRepository(db)
 	memberRepo := postgres.NewTeamMemberRepository(db)
-	txManager := postgres.NewTxManager(db)
 	teamSvc := appteam.NewService(teamRepo, memberRepo, txManager)
 
-	// App services
+	// App services. Auth owns tenant signup: Register creates the user + their
+	// personal org + owner membership atomically via the (privileged) txManager,
+	// and stamps the active org into the access token.
 	authSvc := appauth.NewService(appauth.Deps{
 		Users:           userRepo,
+		Orgs:            orgRepo,
 		Resets:          passwordResetRepo,
 		Verifications:   emailVerificationRepo,
 		RefreshTokens:   refreshTokenRepo,
+		Tx:              txManager,
 		Email:           emailSvc,
 		JWTMaker:        jwtMaker,
 		FrontendURL:     cfg.FrontendURL,
@@ -128,8 +154,10 @@ func main() {
 	})
 	userSvc := appuser.NewService(userRepo)
 
-	// Router
-	router := handler.NewRouter(authSvc, userSvc, billingSvc, storageSvc, aiSvc, notifSvc, blogSvc, teamSvc, wsHub, cfg.JWTSecret, cfg.FrontendURL, db, logger, demoAI)
+	// Router. The org resolver turns an authenticated user into an authorized
+	// active organization for each request (verifying membership of any explicit
+	// org claim, else the user's default org).
+	router := handler.NewRouter(authSvc, userSvc, billingSvc, storageSvc, aiSvc, notifSvc, blogSvc, teamSvc, wsHub, cfg.JWTSecret, cfg.FrontendURL, db, logger, demoAI, orgSvc.ResolveActiveOrg)
 
 	// HTTP server
 	srv := &http.Server{

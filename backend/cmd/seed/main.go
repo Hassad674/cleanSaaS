@@ -25,10 +25,79 @@ func main() {
 
 	seedAdmin(ctx, userRepo)
 	seedDemoUser(ctx, db)
+	seedOrganizations(ctx, db)
 	seedPlans(ctx, db)
 	seedBlogPosts(ctx, db)
 
 	fmt.Println("Seed completed.")
+}
+
+// demoOrgID is the fixed organization the public demo runs under. It MUST match
+// handler.demoOrgID so demo storage writes land in the demo tenant.
+const demoOrgID = "00000000-0000-0000-0000-0000000000d0"
+
+// seedOrganizations gives the seeded admin and demo users each a personal
+// organization (with an owner membership), so the org-scoped request path and the
+// public demos both have a tenant to operate in. It is idempotent: existing orgs
+// (matched by owner / fixed id) are left untouched. The seed runs as the
+// privileged role and therefore bypasses RLS — exactly what a system seed needs.
+func seedOrganizations(ctx context.Context, db *sql.DB) {
+	const demoUserID = "00000000-0000-0000-0000-000000000000"
+
+	// Personal org for the admin user.
+	var adminID string
+	if err := db.QueryRowContext(ctx, `SELECT id FROM users WHERE email = 'admin@cleansaas.dev'`).Scan(&adminID); err == nil {
+		ensureOrg(ctx, db, "", "Admin Organization", "admin-org", adminID)
+	}
+
+	// Fixed demo org owned by the demo user — used by the public storage demo.
+	var demoExists bool
+	if err := db.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM users WHERE id = $1)`, demoUserID).Scan(&demoExists); err == nil && demoExists {
+		ensureOrg(ctx, db, demoOrgID, "Demo Organization", "demo-org", demoUserID)
+	}
+}
+
+// ensureOrg creates an organization (with the given fixed id, or a generated one
+// when id is empty) and an owner membership if the owner has no org yet. It is a
+// no-op when the org already exists.
+func ensureOrg(ctx context.Context, db *sql.DB, id, name, slug, ownerID string) {
+	var orgID string
+	if id != "" {
+		var exists bool
+		if err := db.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM organizations WHERE id = $1)`, id).Scan(&exists); err != nil {
+			log.Fatalf("checking organization %s: %v", slug, err)
+		}
+		if exists {
+			fmt.Printf("Organization '%s' already exists, skipping.\n", slug)
+			return
+		}
+		if err := db.QueryRowContext(ctx,
+			`INSERT INTO organizations (id, name, slug, owner_id) VALUES ($1, $2, $3, $4) RETURNING id`,
+			id, name, slug, ownerID,
+		).Scan(&orgID); err != nil {
+			log.Fatalf("inserting organization %s: %v", slug, err)
+		}
+	} else {
+		if err := db.QueryRowContext(ctx, `SELECT id FROM organizations WHERE owner_id = $1 ORDER BY created_at ASC LIMIT 1`, ownerID).Scan(&orgID); err == nil {
+			fmt.Printf("Organization for owner already exists, skipping '%s'.\n", slug)
+			return
+		}
+		if err := db.QueryRowContext(ctx,
+			`INSERT INTO organizations (name, slug, owner_id) VALUES ($1, $2, $3) RETURNING id`,
+			name, slug, ownerID,
+		).Scan(&orgID); err != nil {
+			log.Fatalf("inserting organization %s: %v", slug, err)
+		}
+	}
+
+	if _, err := db.ExecContext(ctx,
+		`INSERT INTO organization_members (org_id, user_id, role) VALUES ($1, $2, 'owner')
+		 ON CONFLICT (org_id, user_id) DO NOTHING`,
+		orgID, ownerID,
+	); err != nil {
+		log.Fatalf("inserting owner membership for %s: %v", slug, err)
+	}
+	fmt.Printf("Organization '%s' created.\n", slug)
 }
 
 // seedDemoUser creates a fixed-UUID user for public demo endpoints (storage demo, etc.).

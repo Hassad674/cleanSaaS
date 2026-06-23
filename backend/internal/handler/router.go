@@ -41,6 +41,7 @@ func NewRouter(
 	db *sql.DB,
 	logger *slog.Logger,
 	demoAI service.AIService,
+	orgResolver middleware.OrgResolver,
 ) http.Handler {
 	r := chi.NewRouter()
 
@@ -124,9 +125,11 @@ func NewRouter(
 		})
 	}
 
-	// Protected routes
+	// Protected routes. AuthWithOrg authenticates AND resolves the caller's active
+	// organization into the request context, so the org-scoped database path can
+	// enforce row-level security on every tenant query.
 	r.Group(func(r chi.Router) {
-		r.Use(middleware.Auth(jwtSecret))
+		r.Use(middleware.AuthWithOrg(jwtSecret, orgResolver))
 
 		// Auth actions requiring authentication
 		authHandler := NewAuthHandler(authSvc)

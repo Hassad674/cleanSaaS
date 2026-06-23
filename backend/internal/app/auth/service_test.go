@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	"github.com/hassad/boilerplateSaaS/backend/internal/domain"
+	domainorg "github.com/hassad/boilerplateSaaS/backend/internal/domain/org"
 	"github.com/hassad/boilerplateSaaS/backend/internal/domain/user"
 	"github.com/hassad/boilerplateSaaS/backend/internal/port/repository"
 	"github.com/hassad/boilerplateSaaS/backend/internal/port/service"
@@ -176,6 +177,43 @@ type testDeps struct {
 	emailSvc    *mockEmailSvc
 }
 
+// mockOrgRepo is a minimal OrganizationRepository for auth tests. FindDefaultForUser
+// reports "not found" so the OAuth path creates a personal org; Create assigns an id.
+type mockOrgRepo struct{}
+
+func (m *mockOrgRepo) Create(_ context.Context, o *domainorg.Organization) error {
+	o.ID = "org-1"
+	return nil
+}
+func (m *mockOrgRepo) FindByID(_ context.Context, _ string) (*domainorg.Organization, error) {
+	return nil, domain.ErrNotFound
+}
+func (m *mockOrgRepo) FindBySlug(_ context.Context, _ string) (*domainorg.Organization, error) {
+	return nil, domain.ErrNotFound
+}
+func (m *mockOrgRepo) FindDefaultForUser(_ context.Context, _ string) (*domainorg.Organization, error) {
+	return nil, domain.ErrNotFound
+}
+
+type mockOrgMemberRepo struct{}
+
+func (m *mockOrgMemberRepo) Add(_ context.Context, _ *domainorg.Member) error { return nil }
+func (m *mockOrgMemberRepo) FindByOrgAndUser(_ context.Context, _, _ string) (*domainorg.Member, error) {
+	return nil, domain.ErrNotFound
+}
+func (m *mockOrgMemberRepo) IsMember(_ context.Context, _, _ string) (bool, error) { return true, nil }
+
+// mockTxManager runs the signup callback directly with the test's user repo and
+// stub org repos — no real transaction is needed in a unit test.
+type mockTxManager struct{ users repository.UserRepository }
+
+func (m *mockTxManager) WithTeamTx(ctx context.Context, fn func(teams repository.TeamRepository, members repository.TeamMemberRepository) error) error {
+	return fn(nil, nil)
+}
+func (m *mockTxManager) WithSignupTx(ctx context.Context, fn func(users repository.UserRepository, orgs repository.OrganizationRepository, members repository.OrganizationMemberRepository) error) error {
+	return fn(m.users, &mockOrgRepo{}, &mockOrgMemberRepo{})
+}
+
 func newTestService(d testDeps) *Service {
 	if d.userRepo == nil {
 		d.userRepo = &mockUserRepo{}
@@ -191,9 +229,11 @@ func newTestService(d testDeps) *Service {
 	}
 	deps := Deps{
 		Users:           d.userRepo,
+		Orgs:            &mockOrgRepo{},
 		Resets:          d.resetRepo,
 		Verifications:   d.verifyRepo,
 		RefreshTokens:   d.refreshRepo,
+		Tx:              &mockTxManager{users: d.userRepo},
 		JWTMaker:        jwt.NewMaker("secret"),
 		FrontendURL:     "http://localhost:3006",
 		RefreshTokenTTL: 720 * time.Hour,

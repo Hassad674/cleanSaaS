@@ -27,6 +27,12 @@ func (m *mockTxManager) WithTeamTx(ctx context.Context, fn func(teams repository
 	return fn(m.teams, m.members)
 }
 
+// WithSignupTx is unused by the team service; it exists only to satisfy the
+// repository.TxManager port now that signup shares the same unit-of-work seam.
+func (m *mockTxManager) WithSignupTx(ctx context.Context, fn func(users repository.UserRepository, orgs repository.OrganizationRepository, members repository.OrganizationMemberRepository) error) error {
+	return fn(nil, nil, nil)
+}
+
 // newTestService wires the team service with the given repositories and a passthrough
 // tx manager that hands those same repositories to the use-case callback.
 func newTestService(teams repository.TeamRepository, members repository.TeamMemberRepository) *Service {

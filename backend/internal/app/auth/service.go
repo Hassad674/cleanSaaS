@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/hassad/boilerplateSaaS/backend/internal/domain"
+	"github.com/hassad/boilerplateSaaS/backend/internal/domain/org"
 	"github.com/hassad/boilerplateSaaS/backend/internal/domain/user"
 	"github.com/hassad/boilerplateSaaS/backend/internal/port/repository"
 	"github.com/hassad/boilerplateSaaS/backend/internal/port/service"
@@ -18,9 +19,11 @@ import (
 
 type Service struct {
 	users           repository.UserRepository
+	orgs            repository.OrganizationRepository
 	resets          repository.PasswordResetRepository
 	verifications   repository.EmailVerificationRepository
 	refreshTokens   repository.RefreshTokenRepository
+	tx              repository.TxManager
 	email           service.EmailService
 	jwtMaker        *jwt.Maker
 	frontendURL     string
@@ -29,11 +32,18 @@ type Service struct {
 
 // Deps bundles the auth service dependencies. A struct keeps the constructor
 // within the ≤4-parameter limit while staying explicit about wiring.
+//
+// Tx + Orgs power tenant signup: Register creates the user, their personal
+// organization, and the owner membership in ONE transaction so a user is never
+// persisted without a home organization. Orgs is also used on login to resolve
+// the active organization stamped into the access token.
 type Deps struct {
 	Users           repository.UserRepository
+	Orgs            repository.OrganizationRepository
 	Resets          repository.PasswordResetRepository
 	Verifications   repository.EmailVerificationRepository
 	RefreshTokens   repository.RefreshTokenRepository
+	Tx              repository.TxManager
 	Email           service.EmailService
 	JWTMaker        *jwt.Maker
 	FrontendURL     string
@@ -43,9 +53,11 @@ type Deps struct {
 func NewService(deps Deps) *Service {
 	return &Service{
 		users:           deps.Users,
+		orgs:            deps.Orgs,
 		resets:          deps.Resets,
 		verifications:   deps.Verifications,
 		refreshTokens:   deps.RefreshTokens,
+		tx:              deps.Tx,
 		email:           deps.Email,
 		jwtMaker:        deps.JWTMaker,
 		frontendURL:     deps.FrontendURL,
@@ -72,7 +84,35 @@ func (s *Service) Register(ctx context.Context, email, name, password string) (*
 		return nil, "", "", err
 	}
 
-	if err := s.users.Create(ctx, u); err != nil {
+	// Create the user, their personal organization, and the owner membership in ONE
+	// transaction. activeOrgID is set inside the callback once the org has an ID, so
+	// the access token can be stamped with it below.
+	var activeOrgID string
+	err = s.tx.WithSignupTx(ctx, func(users repository.UserRepository, orgs repository.OrganizationRepository, members repository.OrganizationMemberRepository) error {
+		if err := users.Create(ctx, u); err != nil {
+			return err
+		}
+		o, err := org.New(name, "", u.ID)
+		if err != nil {
+			return err
+		}
+		// Personal-org slugs must be unique; suffix with a short slice of the user
+		// id so two users named the same do not collide.
+		o.Slug = uniqueSlug(o.Slug, u.ID)
+		if err := orgs.Create(ctx, o); err != nil {
+			return fmt.Errorf("creating personal organization: %w", err)
+		}
+		owner, err := org.NewMember(o.ID, u.ID, org.RoleOwner)
+		if err != nil {
+			return err
+		}
+		if err := members.Add(ctx, owner); err != nil {
+			return fmt.Errorf("adding owner membership: %w", err)
+		}
+		activeOrgID = o.ID
+		return nil
+	})
+	if err != nil {
 		return nil, "", "", err
 	}
 
@@ -81,12 +121,25 @@ func (s *Service) Register(ctx context.Context, email, name, password string) (*
 		_ = s.sendVerificationEmail(ctx, u)
 	}
 
-	access, refresh, err := s.issueTokens(ctx, u)
+	access, refresh, err := s.issueTokens(ctx, u, activeOrgID)
 	if err != nil {
 		return nil, "", "", err
 	}
 
 	return u, access, refresh, nil
+}
+
+// uniqueSlug appends a short, stable suffix derived from the user id to a base
+// slug so per-user personal organizations never collide on the unique slug index.
+func uniqueSlug(base, userID string) string {
+	suffix := userID
+	if len(suffix) > 8 {
+		suffix = suffix[:8]
+	}
+	if base == "" {
+		base = "org"
+	}
+	return base + "-" + suffix
 }
 
 func (s *Service) Login(ctx context.Context, email, password string) (*user.User, string, string, error) {
@@ -99,7 +152,7 @@ func (s *Service) Login(ctx context.Context, email, password string) (*user.User
 		return nil, "", "", domain.ErrUnauthorized
 	}
 
-	access, refresh, err := s.issueTokens(ctx, u)
+	access, refresh, err := s.issueTokens(ctx, u, s.activeOrgID(ctx, u.ID))
 	if err != nil {
 		return nil, "", "", err
 	}
@@ -119,7 +172,14 @@ func (s *Service) OAuthCallback(ctx context.Context, oauthUser *service.OAuthUse
 		return nil, "", "", err
 	}
 
-	access, refresh, err := s.issueTokens(ctx, u)
+	// An OAuth user signing in for the first time has no organization yet — ensure
+	// one exists so they land in a tenant just like an email signup.
+	orgID, err := s.ensureOrg(ctx, u)
+	if err != nil {
+		return nil, "", "", err
+	}
+
+	access, refresh, err := s.issueTokens(ctx, u, orgID)
 	if err != nil {
 		return nil, "", "", err
 	}
@@ -127,11 +187,11 @@ func (s *Service) OAuthCallback(ctx context.Context, oauthUser *service.OAuthUse
 	return u, access, refresh, nil
 }
 
-// issueTokens mints a short-lived access token and a long-lived opaque refresh
-// token, persisting only the SHA-256 hash of the refresh token. The raw refresh
-// token is returned to the caller and never stored.
-func (s *Service) issueTokens(ctx context.Context, u *user.User) (access, refresh string, err error) {
-	access, err = s.jwtMaker.Generate(u.ID, string(u.Role))
+// issueTokens mints a short-lived access token (carrying the active org) and a
+// long-lived opaque refresh token, persisting only the SHA-256 hash of the refresh
+// token. The raw refresh token is returned to the caller and never stored.
+func (s *Service) issueTokens(ctx context.Context, u *user.User, orgID string) (access, refresh string, err error) {
+	access, err = s.jwtMaker.GenerateWithOrg(u.ID, string(u.Role), orgID)
 	if err != nil {
 		return "", "", err
 	}
@@ -142,6 +202,56 @@ func (s *Service) issueTokens(ctx context.Context, u *user.User) (access, refres
 	}
 
 	return access, refresh, nil
+}
+
+// activeOrgID returns the user's default/personal organization id, or "" if it
+// cannot be resolved. Resolving the org is best-effort here: a token without an
+// org claim still works because the middleware falls back to a default-org lookup.
+func (s *Service) activeOrgID(ctx context.Context, userID string) string {
+	if s.orgs == nil {
+		return ""
+	}
+	o, err := s.orgs.FindDefaultForUser(ctx, userID)
+	if err != nil {
+		return ""
+	}
+	return o.ID
+}
+
+// ensureOrg returns the user's default organization id, creating a personal
+// organization (and owner membership) on the fly if none exists yet — used by the
+// OAuth path where there is no explicit registration step.
+func (s *Service) ensureOrg(ctx context.Context, u *user.User) (string, error) {
+	if s.orgs == nil {
+		return "", nil
+	}
+	if o, err := s.orgs.FindDefaultForUser(ctx, u.ID); err == nil {
+		return o.ID, nil
+	} else if !errors.Is(err, domain.ErrNotFound) {
+		return "", err
+	}
+
+	var orgID string
+	err := s.tx.WithSignupTx(ctx, func(_ repository.UserRepository, orgs repository.OrganizationRepository, members repository.OrganizationMemberRepository) error {
+		o, err := org.New(u.Name, "", u.ID)
+		if err != nil {
+			return err
+		}
+		o.Slug = uniqueSlug(o.Slug, u.ID)
+		if err := orgs.Create(ctx, o); err != nil {
+			return fmt.Errorf("creating personal organization: %w", err)
+		}
+		owner, err := org.NewMember(o.ID, u.ID, org.RoleOwner)
+		if err != nil {
+			return err
+		}
+		if err := members.Add(ctx, owner); err != nil {
+			return fmt.Errorf("adding owner membership: %w", err)
+		}
+		orgID = o.ID
+		return nil
+	})
+	return orgID, err
 }
 
 // storeRefreshToken generates an opaque refresh token, persists its hash, and
@@ -192,7 +302,7 @@ func (s *Service) Refresh(ctx context.Context, refreshToken string) (newAccess, 
 		return "", "", nil, fmt.Errorf("revoking rotated refresh token: %w", err)
 	}
 
-	newAccess, newRefresh, err = s.issueTokens(ctx, u)
+	newAccess, newRefresh, err = s.issueTokens(ctx, u, s.activeOrgID(ctx, u.ID))
 	if err != nil {
 		return "", "", nil, err
 	}

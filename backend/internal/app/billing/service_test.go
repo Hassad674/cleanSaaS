@@ -9,6 +9,7 @@ import (
 
 	"github.com/hassad/boilerplateSaaS/backend/internal/domain"
 	domainbilling "github.com/hassad/boilerplateSaaS/backend/internal/domain/billing"
+	domainorg "github.com/hassad/boilerplateSaaS/backend/internal/domain/org"
 	"github.com/hassad/boilerplateSaaS/backend/internal/domain/user"
 	"github.com/hassad/boilerplateSaaS/backend/internal/port/repository"
 	"github.com/hassad/boilerplateSaaS/backend/internal/port/service"
@@ -223,7 +224,7 @@ func TestBillingService_CreateCheckout_Success(t *testing.T) {
 		},
 	}
 
-	svc := NewService(userRepo, &mockSubRepo{}, planRepo, &mockInvoiceRepo{}, &mockProcessedEventRepo{}, paymentSvc, "http://localhost:3006")
+	svc := newTestService(userRepo, &mockSubRepo{}, planRepo, &mockInvoiceRepo{}, &mockProcessedEventRepo{}, paymentSvc, "http://localhost:3006")
 	url, err := svc.CreateCheckout(context.Background(), "u1", "p1")
 	assert.NoError(t, err)
 	assert.Equal(t, "https://checkout.stripe.com/session123", url)
@@ -254,7 +255,7 @@ func TestBillingService_CreateCheckout_CreatesStripeCustomer(t *testing.T) {
 		},
 	}
 
-	svc := NewService(userRepo, &mockSubRepo{}, planRepo, &mockInvoiceRepo{}, &mockProcessedEventRepo{}, paymentSvc, "http://localhost:3006")
+	svc := newTestService(userRepo, &mockSubRepo{}, planRepo, &mockInvoiceRepo{}, &mockProcessedEventRepo{}, paymentSvc, "http://localhost:3006")
 	_, err := svc.CreateCheckout(context.Background(), "u1", "p1")
 	assert.NoError(t, err)
 	assert.True(t, customerCreated)
@@ -286,7 +287,7 @@ func TestBillingService_CancelSubscription_Success(t *testing.T) {
 		},
 	}
 
-	svc := NewService(&mockUserRepo{}, subRepo, &mockPlanRepo{}, &mockInvoiceRepo{}, &mockProcessedEventRepo{}, paymentSvc, "http://localhost:3006")
+	svc := newTestService(&mockUserRepo{}, subRepo, &mockPlanRepo{}, &mockInvoiceRepo{}, &mockProcessedEventRepo{}, paymentSvc, "http://localhost:3006")
 	err := svc.CancelSubscription(context.Background(), "u1")
 	assert.NoError(t, err)
 	assert.True(t, stripeCanceled)
@@ -304,7 +305,7 @@ func TestBillingService_CancelSubscription_AlreadyCanceling(t *testing.T) {
 		},
 	}
 
-	svc := NewService(&mockUserRepo{}, subRepo, &mockPlanRepo{}, &mockInvoiceRepo{}, &mockProcessedEventRepo{}, &mockPaymentSvc{}, "http://localhost:3006")
+	svc := newTestService(&mockUserRepo{}, subRepo, &mockPlanRepo{}, &mockInvoiceRepo{}, &mockProcessedEventRepo{}, &mockPaymentSvc{}, "http://localhost:3006")
 	err := svc.CancelSubscription(context.Background(), "u1")
 	assert.ErrorIs(t, err, domain.ErrValidation)
 }
@@ -334,7 +335,7 @@ func TestBillingService_HandleWebhook_SubscriptionDeleted(t *testing.T) {
 		},
 	}
 
-	svc := NewService(&mockUserRepo{}, subRepo, &mockPlanRepo{}, &mockInvoiceRepo{}, &mockProcessedEventRepo{}, paymentSvc, "http://localhost:3006")
+	svc := newTestService(&mockUserRepo{}, subRepo, &mockPlanRepo{}, &mockInvoiceRepo{}, &mockProcessedEventRepo{}, paymentSvc, "http://localhost:3006")
 	err := svc.HandleWebhook(context.Background(), []byte("payload"), "sig")
 	assert.NoError(t, err)
 	assert.Equal(t, domainbilling.StatusCanceled, subStatus)
@@ -368,7 +369,7 @@ func TestBillingService_HandleWebhook_InvoicePaid(t *testing.T) {
 		},
 	}
 
-	svc := NewService(&mockUserRepo{}, subRepo, &mockPlanRepo{}, invoiceRepo, &mockProcessedEventRepo{}, paymentSvc, "http://localhost:3006")
+	svc := newTestService(&mockUserRepo{}, subRepo, &mockPlanRepo{}, invoiceRepo, &mockProcessedEventRepo{}, paymentSvc, "http://localhost:3006")
 	err := svc.HandleWebhook(context.Background(), []byte("payload"), "sig")
 	assert.NoError(t, err)
 	assert.True(t, invoiceCreated)
@@ -418,7 +419,7 @@ func TestBillingService_HandleWebhook_Idempotent(t *testing.T) {
 		},
 	}
 
-	svc := NewService(&mockUserRepo{}, subRepo, &mockPlanRepo{}, invoiceRepo, processedRepo, paymentSvc, "http://localhost:3006")
+	svc := newTestService(&mockUserRepo{}, subRepo, &mockPlanRepo{}, invoiceRepo, processedRepo, paymentSvc, "http://localhost:3006")
 
 	// First delivery: processed, invoice created.
 	err := svc.HandleWebhook(context.Background(), []byte("payload"), "sig")
@@ -465,7 +466,7 @@ func TestBillingService_HandleWebhook_SubscriptionUpdated_Existing(t *testing.T)
 		},
 	}
 
-	svc := NewService(&mockUserRepo{}, subRepo, planRepo, &mockInvoiceRepo{}, &mockProcessedEventRepo{}, paymentSvc, "http://localhost:3006")
+	svc := newTestService(&mockUserRepo{}, subRepo, planRepo, &mockInvoiceRepo{}, &mockProcessedEventRepo{}, paymentSvc, "http://localhost:3006")
 	err := svc.HandleWebhook(context.Background(), []byte("payload"), "sig")
 	assert.NoError(t, err)
 	assert.Equal(t, "p_new", updatedSub.PlanID)
@@ -491,7 +492,7 @@ func TestBillingService_CreateCheckout_LifetimePlan(t *testing.T) {
 		},
 	}
 
-	svc := NewService(userRepo, &mockSubRepo{}, planRepo, &mockInvoiceRepo{}, &mockProcessedEventRepo{}, paymentSvc, "http://localhost:3006")
+	svc := newTestService(userRepo, &mockSubRepo{}, planRepo, &mockInvoiceRepo{}, &mockProcessedEventRepo{}, paymentSvc, "http://localhost:3006")
 	url, err := svc.CreateCheckout(context.Background(), "u1", "p1")
 	assert.NoError(t, err)
 	assert.Equal(t, "https://checkout.stripe.com/lifetime", url)
@@ -512,7 +513,7 @@ func TestBillingService_DemoCheckout_Success(t *testing.T) {
 		},
 	}
 
-	svc := NewService(&mockUserRepo{}, &mockSubRepo{}, planRepo, &mockInvoiceRepo{}, &mockProcessedEventRepo{}, paymentSvc, "http://localhost:3006")
+	svc := newTestService(&mockUserRepo{}, &mockSubRepo{}, planRepo, &mockInvoiceRepo{}, &mockProcessedEventRepo{}, paymentSvc, "http://localhost:3006")
 	url, err := svc.DemoCheckout(context.Background(), "p1", "http://localhost/success", "http://localhost/cancel")
 	assert.NoError(t, err)
 	assert.Equal(t, "https://checkout.stripe.com/guest", url)
@@ -526,7 +527,7 @@ func TestBillingService_DemoCheckout_FreePlanRejected(t *testing.T) {
 		},
 	}
 
-	svc := NewService(&mockUserRepo{}, &mockSubRepo{}, planRepo, &mockInvoiceRepo{}, &mockProcessedEventRepo{}, &mockPaymentSvc{}, "http://localhost:3006")
+	svc := newTestService(&mockUserRepo{}, &mockSubRepo{}, planRepo, &mockInvoiceRepo{}, &mockProcessedEventRepo{}, &mockPaymentSvc{}, "http://localhost:3006")
 	_, err := svc.DemoCheckout(context.Background(), "free", "http://localhost/success", "http://localhost/cancel")
 	assert.Error(t, err)
 }
@@ -545,15 +546,73 @@ func TestBillingService_DemoCheckout_LifetimeMode(t *testing.T) {
 		},
 	}
 
-	svc := NewService(&mockUserRepo{}, &mockSubRepo{}, planRepo, &mockInvoiceRepo{}, &mockProcessedEventRepo{}, paymentSvc, "http://localhost:3006")
+	svc := newTestService(&mockUserRepo{}, &mockSubRepo{}, planRepo, &mockInvoiceRepo{}, &mockProcessedEventRepo{}, paymentSvc, "http://localhost:3006")
 	url, err := svc.DemoCheckout(context.Background(), "p1", "http://localhost/success", "http://localhost/cancel")
 	assert.NoError(t, err)
 	assert.Equal(t, "https://checkout.stripe.com/guest-lifetime", url)
 	assert.Equal(t, service.CheckoutModePayment, receivedMode)
 }
 
+// mockSubScope adapts a plain subscription repo into a repository.SubscriptionScope
+// by invoking the callback with the underlying repo — unit tests need no real tx.
+type mockSubScope struct {
+	repo repository.SubscriptionRepository
+}
+
+func (s *mockSubScope) WithOrgSubscriptions(ctx context.Context, fn func(subscriptions repository.SubscriptionRepository) error) error {
+	return fn(s.repo)
+}
+
+// mockOrgRepo is a minimal OrganizationRepository for billing tests. The webhook
+// path resolves a customer's org via FindDefaultForUser; it returns a fixed org.
+type mockOrgRepo struct {
+	findDefaultFn func(ctx context.Context, userID string) (*domainorg.Organization, error)
+}
+
+func (m *mockOrgRepo) Create(_ context.Context, _ *domainorg.Organization) error { return nil }
+func (m *mockOrgRepo) FindByID(_ context.Context, _ string) (*domainorg.Organization, error) {
+	return nil, domain.ErrNotFound
+}
+func (m *mockOrgRepo) FindBySlug(_ context.Context, _ string) (*domainorg.Organization, error) {
+	return nil, domain.ErrNotFound
+}
+func (m *mockOrgRepo) FindDefaultForUser(ctx context.Context, userID string) (*domainorg.Organization, error) {
+	if m.findDefaultFn != nil {
+		return m.findDefaultFn(ctx, userID)
+	}
+	return &domainorg.Organization{ID: "org-1", OwnerID: userID}, nil
+}
+
+// newTestService builds the billing service from the positional dependencies the
+// tests already construct, wiring the subscription repo into BOTH the raw seam
+// (Subscriptions, used by the webhook/system path) and the org-scoped seam
+// (SubscriptionTx, used by the authenticated request path).
+func newTestService(
+	users repository.UserRepository,
+	subs repository.SubscriptionRepository,
+	plans repository.PlanRepository,
+	invoices repository.InvoiceRepository,
+	processed repository.ProcessedEventRepository,
+	payment service.PaymentService,
+	frontendURL string,
+) *Service {
+	return NewService(Deps{
+		Users:           users,
+		Orgs:            &mockOrgRepo{},
+		Subscriptions:   subs,
+		SubscriptionTx:  &mockSubScope{repo: subs},
+		Plans:           plans,
+		Invoices:        invoices,
+		ProcessedEvents: processed,
+		Payment:         payment,
+		FrontendURL:     frontendURL,
+	})
+}
+
 // Compile-time checks that the mocks satisfy their port interfaces.
 var (
 	_ repository.SubscriptionRepository   = (*mockSubRepo)(nil)
 	_ repository.ProcessedEventRepository = (*mockProcessedEventRepo)(nil)
+	_ repository.SubscriptionScope        = (*mockSubScope)(nil)
+	_ repository.OrganizationRepository   = (*mockOrgRepo)(nil)
 )

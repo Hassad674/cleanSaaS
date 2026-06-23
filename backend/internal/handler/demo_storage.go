@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"net/http"
 	"strconv"
 
@@ -8,11 +9,24 @@ import (
 
 	appstorage "github.com/hassad/boilerplateSaaS/backend/internal/app/storage"
 	"github.com/hassad/boilerplateSaaS/backend/internal/handler/dto/response"
+	"github.com/hassad/boilerplateSaaS/backend/pkg/orgctx"
 )
 
 // demoUserID is a fixed UUID used for all demo storage operations.
 // This keeps demo files isolated from real user data.
 const demoUserID = "00000000-0000-0000-0000-000000000000"
+
+// demoOrgID is the fixed organization the public demo runs under. The demo is a
+// real tenant: its data is org-scoped and RLS-isolated like any other org, so the
+// public demos keep working end-to-end without seeing (or leaking into) real
+// tenants. It is seeded by cmd/seed alongside the demo user.
+const demoOrgID = "00000000-0000-0000-0000-0000000000d0"
+
+// withDemoOrg scopes a request context to the fixed demo organization so the
+// org-scoped storage path (and its row-level security) applies to demo files.
+func withDemoOrg(ctx context.Context) context.Context {
+	return orgctx.WithOrgID(ctx, demoOrgID)
+}
 
 // DemoStorageHandler provides public (no-auth) storage endpoints for the
 // landing-page demo. It reuses the real storage app service but scopes
@@ -46,7 +60,7 @@ func (h *DemoStorageHandler) Upload(w http.ResponseWriter, r *http.Request) {
 		contentType = "application/octet-stream"
 	}
 
-	result, err := h.svc.Upload(r.Context(), demoUserID, header.Filename, contentType, header.Size, file)
+	result, err := h.svc.Upload(withDemoOrg(r.Context()), demoUserID, header.Filename, contentType, header.Size, file)
 	if err != nil {
 		response.HandleDomainError(w, err)
 		return
@@ -68,7 +82,7 @@ func (h *DemoStorageHandler) List(w http.ResponseWriter, r *http.Request) {
 	}
 	offset := (page - 1) * limit
 
-	files, total, err := h.svc.List(r.Context(), demoUserID, offset, limit)
+	files, total, err := h.svc.List(withDemoOrg(r.Context()), demoUserID, offset, limit)
 	if err != nil {
 		response.HandleDomainError(w, err)
 		return
@@ -92,7 +106,7 @@ func (h *DemoStorageHandler) List(w http.ResponseWriter, r *http.Request) {
 func (h *DemoStorageHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	fileID := chi.URLParam(r, "id")
 
-	if err := h.svc.Delete(r.Context(), demoUserID, fileID); err != nil {
+	if err := h.svc.Delete(withDemoOrg(r.Context()), demoUserID, fileID); err != nil {
 		response.HandleDomainError(w, err)
 		return
 	}

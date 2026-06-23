@@ -13,11 +13,16 @@ import (
 )
 
 type Service struct {
-	conversations repository.ConversationRepository
+	conversations repository.ConversationScope
 	ai            service.AIService
 }
 
-func NewService(conversations repository.ConversationRepository, ai service.AIService) *Service {
+// NewService wires the AI chat use cases. conversations is an org-scoped
+// unit-of-work: each conversation/message database operation runs inside a
+// transaction bound to the caller's active organization, so RLS enforces tenant
+// isolation on every query. The external AI call is made OUTSIDE any scope so no
+// database transaction is held open across a slow network request.
+func NewService(conversations repository.ConversationScope, ai service.AIService) *Service {
 	return &Service{conversations: conversations, ai: ai}
 }
 
@@ -29,121 +34,140 @@ func (s *Service) CreateConversation(ctx context.Context, userID, title string) 
 		UserID: userID,
 		Title:  title,
 	}
-	if err := s.conversations.Create(ctx, c); err != nil {
+	err := s.conversations.WithOrgConversations(ctx, func(conversations repository.ConversationRepository) error {
+		return conversations.Create(ctx, c)
+	})
+	if err != nil {
 		return nil, fmt.Errorf("creating conversation: %w", err)
 	}
 	return c, nil
 }
 
 func (s *Service) SendMessage(ctx context.Context, userID, conversationID, content string) (string, error) {
-	conv, err := s.conversations.FindByID(ctx, conversationID)
+	conv, err := s.loadOwnedConversation(ctx, userID, conversationID)
 	if err != nil {
 		return "", err
 	}
-	if conv.UserID != userID {
-		return "", domain.ErrForbidden
-	}
 
-	// Save user message
+	// Save user message (org-scoped) and build history.
 	userMsg := domainai.Message{Role: domainai.RoleUser, Content: content}
-	if err := s.conversations.AddMessage(ctx, conversationID, userMsg); err != nil {
+	if err := s.addMessage(ctx, conversationID, userMsg); err != nil {
 		return "", fmt.Errorf("saving user message: %w", err)
 	}
-
-	// Build message history for AI
 	conv.Messages = append(conv.Messages, userMsg)
 
-	// Call AI
+	// Call AI OUTSIDE any DB transaction.
 	resp, err := s.ai.Chat(ctx, conv.Messages)
 	if err != nil {
 		return "", fmt.Errorf("AI chat: %w", err)
 	}
 
-	// Save assistant response
 	assistantMsg := domainai.Message{Role: domainai.RoleAssistant, Content: resp.Content}
-	if err := s.conversations.AddMessage(ctx, conversationID, assistantMsg); err != nil {
+	if err := s.addMessage(ctx, conversationID, assistantMsg); err != nil {
 		return "", fmt.Errorf("saving assistant message: %w", err)
 	}
 
-	// Auto-title from first message
-	if len(conv.Messages) == 1 {
-		title := content
-		if len(title) > 50 {
-			title = title[:50] + "..."
-		}
-		conv.Title = title
-		_ = s.conversations.Update(ctx, conv)
-	}
-
+	s.autoTitle(ctx, conv, content)
 	return resp.Content, nil
 }
 
 func (s *Service) StreamMessage(ctx context.Context, userID, conversationID, content string, writer io.Writer) error {
-	conv, err := s.conversations.FindByID(ctx, conversationID)
+	conv, err := s.loadOwnedConversation(ctx, userID, conversationID)
 	if err != nil {
 		return err
 	}
-	if conv.UserID != userID {
-		return domain.ErrForbidden
-	}
 
-	// Save user message
 	userMsg := domainai.Message{Role: domainai.RoleUser, Content: content}
-	if err := s.conversations.AddMessage(ctx, conversationID, userMsg); err != nil {
+	if err := s.addMessage(ctx, conversationID, userMsg); err != nil {
 		return fmt.Errorf("saving user message: %w", err)
 	}
-
 	conv.Messages = append(conv.Messages, userMsg)
 
-	// Stream from AI, collecting full response
+	// Stream from AI OUTSIDE any DB transaction, collecting the full response.
 	collector := &responseCollector{writer: writer}
 	if err := s.ai.Stream(ctx, conv.Messages, collector); err != nil {
 		return fmt.Errorf("AI stream: %w", err)
 	}
 
-	// Save full assistant response
 	assistantMsg := domainai.Message{Role: domainai.RoleAssistant, Content: collector.Content()}
-	if err := s.conversations.AddMessage(ctx, conversationID, assistantMsg); err != nil {
+	if err := s.addMessage(ctx, conversationID, assistantMsg); err != nil {
 		return fmt.Errorf("saving assistant message: %w", err)
 	}
 
-	// Auto-title
-	if len(conv.Messages) == 1 {
-		title := content
-		if len(title) > 50 {
-			title = title[:50] + "..."
-		}
-		conv.Title = title
-		_ = s.conversations.Update(ctx, conv)
-	}
-
+	s.autoTitle(ctx, conv, content)
 	return nil
 }
 
 func (s *Service) GetConversation(ctx context.Context, userID, conversationID string) (*domainai.Conversation, error) {
-	conv, err := s.conversations.FindByID(ctx, conversationID)
+	return s.loadOwnedConversation(ctx, userID, conversationID)
+}
+
+func (s *Service) ListConversations(ctx context.Context, userID string, offset, limit int) ([]*domainai.Conversation, int, error) {
+	var convos []*domainai.Conversation
+	var total int
+	err := s.conversations.WithOrgConversations(ctx, func(repo repository.ConversationRepository) error {
+		var e error
+		convos, total, e = repo.ListByUserID(ctx, userID, offset, limit)
+		return e
+	})
+	return convos, total, err
+}
+
+func (s *Service) DeleteConversation(ctx context.Context, userID, conversationID string) error {
+	return s.conversations.WithOrgConversations(ctx, func(conversations repository.ConversationRepository) error {
+		conv, err := conversations.FindByID(ctx, conversationID)
+		if err != nil {
+			return err
+		}
+		if conv.UserID != userID {
+			return domain.ErrForbidden
+		}
+		return conversations.Delete(ctx, conversationID)
+	})
+}
+
+// loadOwnedConversation fetches a conversation under the active org scope and
+// verifies the caller owns it, returning domain.ErrForbidden otherwise.
+func (s *Service) loadOwnedConversation(ctx context.Context, userID, conversationID string) (*domainai.Conversation, error) {
+	var conv *domainai.Conversation
+	err := s.conversations.WithOrgConversations(ctx, func(conversations repository.ConversationRepository) error {
+		c, err := conversations.FindByID(ctx, conversationID)
+		if err != nil {
+			return err
+		}
+		if c.UserID != userID {
+			return domain.ErrForbidden
+		}
+		conv = c
+		return nil
+	})
 	if err != nil {
 		return nil, err
-	}
-	if conv.UserID != userID {
-		return nil, domain.ErrForbidden
 	}
 	return conv, nil
 }
 
-func (s *Service) ListConversations(ctx context.Context, userID string, offset, limit int) ([]*domainai.Conversation, int, error) {
-	return s.conversations.ListByUserID(ctx, userID, offset, limit)
+// addMessage persists a single message under the active org scope.
+func (s *Service) addMessage(ctx context.Context, conversationID string, msg domainai.Message) error {
+	return s.conversations.WithOrgConversations(ctx, func(conversations repository.ConversationRepository) error {
+		return conversations.AddMessage(ctx, conversationID, msg)
+	})
 }
 
-func (s *Service) DeleteConversation(ctx context.Context, userID, conversationID string) error {
-	conv, err := s.conversations.FindByID(ctx, conversationID)
-	if err != nil {
-		return err
+// autoTitle sets the conversation title from the first user message. It is
+// best-effort: a failure to update the title never fails the message exchange.
+func (s *Service) autoTitle(ctx context.Context, conv *domainai.Conversation, content string) {
+	if len(conv.Messages) != 1 {
+		return
 	}
-	if conv.UserID != userID {
-		return domain.ErrForbidden
+	title := content
+	if len(title) > 50 {
+		title = title[:50] + "..."
 	}
-	return s.conversations.Delete(ctx, conversationID)
+	conv.Title = title
+	_ = s.conversations.WithOrgConversations(ctx, func(conversations repository.ConversationRepository) error {
+		return conversations.Update(ctx, conv)
+	})
 }
 
 // responseCollector captures streamed content while forwarding to the writer.

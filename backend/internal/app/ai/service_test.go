@@ -10,6 +10,7 @@ import (
 
 	"github.com/hassad/boilerplateSaaS/backend/internal/domain"
 	domainai "github.com/hassad/boilerplateSaaS/backend/internal/domain/ai"
+	"github.com/hassad/boilerplateSaaS/backend/internal/port/repository"
 	"github.com/hassad/boilerplateSaaS/backend/internal/port/service"
 )
 
@@ -69,6 +70,16 @@ func (m *mockConvoRepo) AddMessage(ctx context.Context, conversationID string, m
 	return nil
 }
 
+// scopeOf adapts a plain mockConvoRepo into a repository.ConversationScope by
+// invoking the callback with the underlying repo — unit tests need no real tx.
+type mockConvoScope struct{ repo *mockConvoRepo }
+
+func (s *mockConvoScope) WithOrgConversations(ctx context.Context, fn func(conversations repository.ConversationRepository) error) error {
+	return fn(s.repo)
+}
+
+func scopeOf(repo *mockConvoRepo) *mockConvoScope { return &mockConvoScope{repo: repo} }
+
 type mockAISvc struct {
 	chatFn   func(ctx context.Context, messages []domainai.Message) (*service.AIResponse, error)
 	streamFn func(ctx context.Context, messages []domainai.Message, writer io.Writer) error
@@ -112,7 +123,7 @@ func TestAIService_SendMessage_SavesToDB(t *testing.T) {
 		},
 	}
 
-	svc := NewService(convoRepo, aiMock)
+	svc := NewService(scopeOf(convoRepo), aiMock)
 	reply, err := svc.SendMessage(context.Background(), "user-1", "conv-1", "Hello AI")
 
 	assert.NoError(t, err)
@@ -134,7 +145,7 @@ func TestAIService_SendMessage_ForbiddenForOtherUser(t *testing.T) {
 		},
 	}
 
-	svc := NewService(convoRepo, &mockAISvc{})
+	svc := NewService(scopeOf(convoRepo), &mockAISvc{})
 	_, err := svc.SendMessage(context.Background(), "user-1", "conv-1", "Hello")
 
 	assert.ErrorIs(t, err, domain.ErrForbidden)
@@ -150,7 +161,7 @@ func TestAIService_DeleteConversation_OwnershipCheck(t *testing.T) {
 		},
 	}
 
-	svc := NewService(convoRepo, &mockAISvc{})
+	svc := NewService(scopeOf(convoRepo), &mockAISvc{})
 	err := svc.DeleteConversation(context.Background(), "user-1", "conv-1")
 
 	assert.ErrorIs(t, err, domain.ErrForbidden)
@@ -158,7 +169,7 @@ func TestAIService_DeleteConversation_OwnershipCheck(t *testing.T) {
 
 func TestAIService_CreateConversation_Success(t *testing.T) {
 	convoRepo := &mockConvoRepo{}
-	svc := NewService(convoRepo, &mockAISvc{})
+	svc := NewService(scopeOf(convoRepo), &mockAISvc{})
 
 	conv, err := svc.CreateConversation(context.Background(), "user-1", "My Chat")
 

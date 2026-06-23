@@ -21,4 +21,10 @@ type TxManager interface {
 	// together. Used by the team-create flow so a team and its owner-member are never
 	// persisted independently.
 	WithTeamTx(ctx context.Context, fn func(teams TeamRepository, members TeamMemberRepository) error) error
+
+	// WithSignupTx runs fn inside one transaction with transaction-scoped user,
+	// organization and organization-member repositories. Used by registration so a
+	// user, their personal organization, and the owner membership are all created
+	// together or not at all — a user is never persisted without a home organization.
+	WithSignupTx(ctx context.Context, fn func(users UserRepository, orgs OrganizationRepository, members OrganizationMemberRepository) error) error
 }

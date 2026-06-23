@@ -14,7 +14,9 @@ import (
 
 type Service struct {
 	users           repository.UserRepository
+	orgs            repository.OrganizationRepository
 	subscriptions   repository.SubscriptionRepository
+	subscriptionTx  repository.SubscriptionScope
 	plans           repository.PlanRepository
 	invoices        repository.InvoiceRepository
 	processedEvents repository.ProcessedEventRepository
@@ -22,23 +24,41 @@ type Service struct {
 	frontendURL     string
 }
 
-func NewService(
-	users repository.UserRepository,
-	subscriptions repository.SubscriptionRepository,
-	plans repository.PlanRepository,
-	invoices repository.InvoiceRepository,
-	processedEvents repository.ProcessedEventRepository,
-	payment service.PaymentService,
-	frontendURL string,
-) *Service {
+// Deps bundles the billing service dependencies. A struct keeps the constructor
+// within the ≤4-parameter limit while staying explicit about wiring.
+//
+// Subscriptions are tenant-scoped (org_id + RLS). Two seams exist for them on
+// purpose:
+//   - SubscriptionTx is the org-scoped unit-of-work used by the authenticated
+//     request path (GetSubscription / CancelSubscription); RLS enforces isolation.
+//   - Subscriptions is the raw repository used by the Stripe webhook (a system
+//     path, privileged role, no org context) which looks subscriptions up by
+//     Stripe ID across all tenants and stamps org_id from the customer's user.
+//
+// Orgs resolves a customer's organization when the webhook creates a subscription.
+type Deps struct {
+	Users           repository.UserRepository
+	Orgs            repository.OrganizationRepository
+	Subscriptions   repository.SubscriptionRepository
+	SubscriptionTx  repository.SubscriptionScope
+	Plans           repository.PlanRepository
+	Invoices        repository.InvoiceRepository
+	ProcessedEvents repository.ProcessedEventRepository
+	Payment         service.PaymentService
+	FrontendURL     string
+}
+
+func NewService(deps Deps) *Service {
 	return &Service{
-		users:           users,
-		subscriptions:   subscriptions,
-		plans:           plans,
-		invoices:        invoices,
-		processedEvents: processedEvents,
-		payment:         payment,
-		frontendURL:     frontendURL,
+		users:           deps.Users,
+		orgs:            deps.Orgs,
+		subscriptions:   deps.Subscriptions,
+		subscriptionTx:  deps.SubscriptionTx,
+		plans:           deps.Plans,
+		invoices:        deps.Invoices,
+		processedEvents: deps.ProcessedEvents,
+		payment:         deps.Payment,
+		frontendURL:     deps.FrontendURL,
 	}
 }
 
@@ -152,13 +172,35 @@ func (s *Service) DemoPortalSession(ctx context.Context, customerID, returnURL s
 }
 
 func (s *Service) GetSubscription(ctx context.Context, userID string) (*domainbilling.Subscription, error) {
-	return s.subscriptions.FindByUserID(ctx, userID)
+	var sub *domainbilling.Subscription
+	err := s.subscriptionTx.WithOrgSubscriptions(ctx, func(subscriptions repository.SubscriptionRepository) error {
+		found, e := subscriptions.FindByUserID(ctx, userID)
+		if e != nil {
+			return e
+		}
+		sub = found
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return sub, nil
 }
 
 func (s *Service) CancelSubscription(ctx context.Context, userID string) error {
-	sub, err := s.subscriptions.FindByUserID(ctx, userID)
+	// Read the org-scoped subscription first (RLS-enforced), validate + call
+	// Stripe OUTSIDE any transaction, then persist the cancellation org-scoped.
+	var sub *domainbilling.Subscription
+	err := s.subscriptionTx.WithOrgSubscriptions(ctx, func(subscriptions repository.SubscriptionRepository) error {
+		found, e := subscriptions.FindByUserID(ctx, userID)
+		if e != nil {
+			return fmt.Errorf("finding subscription: %w", e)
+		}
+		sub = found
+		return nil
+	})
 	if err != nil {
-		return fmt.Errorf("finding subscription: %w", err)
+		return err
 	}
 
 	// Validate the transition in the domain before touching Stripe, so we never
@@ -174,7 +216,9 @@ func (s *Service) CancelSubscription(ctx context.Context, userID string) error {
 	if err := sub.Cancel(); err != nil {
 		return err
 	}
-	return s.subscriptions.Update(ctx, sub)
+	return s.subscriptionTx.WithOrgSubscriptions(ctx, func(subscriptions repository.SubscriptionRepository) error {
+		return subscriptions.Update(ctx, sub)
+	})
 }
 
 func (s *Service) CreatePortalSession(ctx context.Context, userID string) (string, error) {
@@ -307,12 +351,22 @@ func (s *Service) createSubscriptionFromWebhook(ctx context.Context, event *serv
 		return nil
 	}
 
+	// Resolve the customer's organization so the subscription is stamped with a
+	// tenant. The webhook is a system path (no request org context), so we read
+	// the user's default/personal org explicitly. Without an org we cannot persist
+	// a tenant-scoped subscription, so skip rather than write an orphan row.
+	org, err := s.orgs.FindDefaultForUser(ctx, u.ID)
+	if err != nil {
+		return nil
+	}
+
 	// Period 0 applies the domain's DefaultPeriod (30 days) — the business rule
 	// now lives in the aggregate, not in this webhook glue.
 	sub, err := domainbilling.NewSubscription(u.ID, plan.ID, event.SubscriptionID, 0)
 	if err != nil {
 		return err
 	}
+	sub.OrgID = org.ID
 
 	return s.subscriptions.Create(ctx, sub)
 }

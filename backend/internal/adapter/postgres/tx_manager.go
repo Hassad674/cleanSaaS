@@ -36,3 +36,20 @@ func (m *TxManager) WithTeamTx(ctx context.Context, fn func(teams repository.Tea
 		return fn(teams, members)
 	})
 }
+
+// WithSignupTx runs fn inside a single transaction with transaction-scoped user,
+// organization and organization-member repositories. Registration uses this so a
+// user, their personal organization, and the owner membership commit together or
+// roll back together — a user is never persisted without a home organization.
+//
+// This runs as the privileged connection role (it creates the org the request
+// will later be scoped to), so it is intentionally NOT routed through the RLS
+// app_user role.
+func (m *TxManager) WithSignupTx(ctx context.Context, fn func(users repository.UserRepository, orgs repository.OrganizationRepository, members repository.OrganizationMemberRepository) error) error {
+	return WithTx(ctx, m.db, func(tx *sql.Tx) error {
+		users := newUserRepositoryTx(tx)
+		orgs := newOrganizationRepositoryTx(tx)
+		members := newOrganizationMemberRepositoryTx(tx)
+		return fn(users, orgs, members)
+	})
+}

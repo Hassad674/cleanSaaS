@@ -27,6 +27,11 @@ const refreshTokenBytes = 32
 type Claims struct {
 	UserID string
 	Role   string
+	// OrgID is the caller's active organization (the tenant). It is optional in the
+	// token: an older token without it, or a non-tenant token (e.g. the WebSocket
+	// upgrade), simply yields an empty OrgID, and the request path then resolves the
+	// user's default organization. Carrying it lets the common case skip a lookup.
+	OrgID string
 }
 
 type Maker struct {
@@ -74,8 +79,17 @@ func (m *Maker) AccessTTL() time.Duration {
 }
 
 // Generate issues a short-lived HS256 access token carrying sub + role + iss +
-// aud + standard time claims.
+// aud + standard time claims. Used where no tenant context applies (e.g. the
+// WebSocket upgrade token).
 func (m *Maker) Generate(userID, role string) (string, error) {
+	return m.GenerateWithOrg(userID, role, "")
+}
+
+// GenerateWithOrg issues an access token that additionally carries the caller's
+// active organization id as the "org" claim. The request path reads it to scope
+// every tenant query. An empty orgID omits the claim, falling back to Generate's
+// behavior.
+func (m *Maker) GenerateWithOrg(userID, role, orgID string) (string, error) {
 	now := time.Now()
 	claims := jwtlib.MapClaims{
 		"sub":  userID,
@@ -85,6 +99,9 @@ func (m *Maker) Generate(userID, role string) (string, error) {
 		"exp":  now.Add(m.accessTTL).Unix(),
 		"iat":  now.Unix(),
 		"nbf":  now.Unix(), // Not valid before issuance time
+	}
+	if orgID != "" {
+		claims["org"] = orgID
 	}
 
 	token := jwtlib.NewWithClaims(jwtlib.SigningMethodHS256, claims)
@@ -119,9 +136,13 @@ func (m *Maker) Validate(tokenStr string) (*Claims, error) {
 		return nil, fmt.Errorf("invalid token: missing role")
 	}
 
+	// org is optional — absent in legacy/non-tenant tokens.
+	orgID, _ := claims["org"].(string)
+
 	return &Claims{
 		UserID: sub,
 		Role:   role,
+		OrgID:  orgID,
 	}, nil
 }
 

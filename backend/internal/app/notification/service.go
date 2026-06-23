@@ -13,11 +13,15 @@ import (
 )
 
 type Service struct {
-	notifications repository.NotificationRepository
+	notifications repository.NotificationScope
 	broadcaster   service.Broadcaster // optional — nil if WebSocket is not enabled
 }
 
-func NewService(notifications repository.NotificationRepository) *Service {
+// NewService wires the notification use cases. notifications is an org-scoped
+// unit-of-work: each notification database operation runs inside a transaction
+// bound to the caller's active organization, so RLS enforces tenant isolation on
+// every query (in addition to the repository's own org_id filter).
+func NewService(notifications repository.NotificationScope) *Service {
 	return &Service{notifications: notifications}
 }
 
@@ -34,7 +38,10 @@ func (s *Service) Send(ctx context.Context, userID, notifType, title, message st
 		Title:   title,
 		Message: message,
 	}
-	if err := s.notifications.Create(ctx, n); err != nil {
+	err := s.notifications.WithOrgNotifications(ctx, func(notifications repository.NotificationRepository) error {
+		return notifications.Create(ctx, n)
+	})
+	if err != nil {
 		return nil, fmt.Errorf("sending notification: %w", err)
 	}
 
@@ -74,24 +81,41 @@ func (s *Service) broadcastNotification(n *domainnotif.Notification) {
 }
 
 func (s *Service) MarkAsRead(ctx context.Context, userID, notifID string) error {
-	n, err := s.notifications.FindByID(ctx, notifID)
-	if err != nil {
-		return err
-	}
-	if n.UserID != userID {
-		return domain.ErrForbidden
-	}
-	return s.notifications.MarkRead(ctx, notifID)
+	return s.notifications.WithOrgNotifications(ctx, func(notifications repository.NotificationRepository) error {
+		n, err := notifications.FindByID(ctx, notifID)
+		if err != nil {
+			return err
+		}
+		if n.UserID != userID {
+			return domain.ErrForbidden
+		}
+		return notifications.MarkRead(ctx, notifID)
+	})
 }
 
 func (s *Service) MarkAllAsRead(ctx context.Context, userID string) error {
-	return s.notifications.MarkAllRead(ctx, userID)
+	return s.notifications.WithOrgNotifications(ctx, func(notifications repository.NotificationRepository) error {
+		return notifications.MarkAllRead(ctx, userID)
+	})
 }
 
 func (s *Service) List(ctx context.Context, userID string, unreadOnly bool, offset, limit int) ([]*domainnotif.Notification, int, error) {
-	return s.notifications.ListByUserID(ctx, userID, unreadOnly, offset, limit)
+	var items []*domainnotif.Notification
+	var total int
+	err := s.notifications.WithOrgNotifications(ctx, func(notifications repository.NotificationRepository) error {
+		var e error
+		items, total, e = notifications.ListByUserID(ctx, userID, unreadOnly, offset, limit)
+		return e
+	})
+	return items, total, err
 }
 
 func (s *Service) UnreadCount(ctx context.Context, userID string) (int, error) {
-	return s.notifications.UnreadCount(ctx, userID)
+	var count int
+	err := s.notifications.WithOrgNotifications(ctx, func(notifications repository.NotificationRepository) error {
+		var e error
+		count, e = notifications.UnreadCount(ctx, userID)
+		return e
+	})
+	return count, err
 }

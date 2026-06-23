@@ -8,12 +8,21 @@ import (
 	"github.com/hassad/boilerplateSaaS/backend/internal/domain/user"
 )
 
+// UserRepository implements repository.UserRepository. It holds a DBTX (not a
+// concrete *sql.DB) so the same code runs on either the connection pool or an
+// open transaction — that is what lets it join the signup unit-of-work.
 type UserRepository struct {
-	db *sql.DB
+	db DBTX
 }
 
 func NewUserRepository(db *sql.DB) *UserRepository {
 	return &UserRepository{db: db}
+}
+
+// newUserRepositoryTx binds the user repository to an open transaction so its
+// writes participate in that transaction. Used by the signup TxManager flow.
+func newUserRepositoryTx(tx DBTX) *UserRepository {
+	return &UserRepository{db: tx}
 }
 
 func (r *UserRepository) Create(ctx context.Context, u *user.User) error {

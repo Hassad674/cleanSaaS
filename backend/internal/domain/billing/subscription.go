@@ -33,6 +33,7 @@ const DefaultPeriod = 30 * 24 * time.Hour
 type Subscription struct {
 	ID                 string
 	UserID             string
+	OrgID              string
 	PlanID             string
 	StripeSubscription string
 	Status             Status

@@ -12,6 +12,7 @@ import (
 
 	"github.com/hassad/boilerplateSaaS/backend/internal/domain"
 	domainstorage "github.com/hassad/boilerplateSaaS/backend/internal/domain/storage"
+	"github.com/hassad/boilerplateSaaS/backend/internal/port/repository"
 )
 
 // Mocks
@@ -77,6 +78,20 @@ func (m *mockFileRepo) Delete(ctx context.Context, id string) error {
 	return nil
 }
 
+// mockFileScope adapts a plain mockFileRepo into a repository.FileScope by simply
+// invoking the callback with the underlying repo — no real transaction is needed
+// for unit tests, which stay infrastructure-free.
+type mockFileScope struct {
+	repo *mockFileRepo
+}
+
+func (s *mockFileScope) WithOrgFiles(ctx context.Context, fn func(files repository.FileRepository) error) error {
+	return fn(s.repo)
+}
+
+// scope wraps a mock file repo as a FileScope for the service constructor.
+func scope(repo *mockFileRepo) *mockFileScope { return &mockFileScope{repo: repo} }
+
 // Tests
 
 func TestStorageService_Upload_Success(t *testing.T) {
@@ -89,7 +104,7 @@ func TestStorageService_Upload_Success(t *testing.T) {
 	}
 	fileRepo := &mockFileRepo{}
 
-	svc := NewService(storageMock, fileRepo)
+	svc := NewService(storageMock, scope(fileRepo))
 	reader := bytes.NewReader([]byte("file content"))
 	file, err := svc.Upload(context.Background(), "user-1", "photo.jpg", "image/jpeg", 1024, reader)
 
@@ -103,7 +118,7 @@ func TestStorageService_Upload_Success(t *testing.T) {
 }
 
 func TestStorageService_Upload_ForbiddenType(t *testing.T) {
-	svc := NewService(&mockStorageSvc{}, &mockFileRepo{})
+	svc := NewService(&mockStorageSvc{}, scope(&mockFileRepo{}))
 	reader := bytes.NewReader([]byte("data"))
 	_, err := svc.Upload(context.Background(), "user-1", "script.exe", "application/x-executable", 1024, reader)
 
@@ -112,7 +127,7 @@ func TestStorageService_Upload_ForbiddenType(t *testing.T) {
 }
 
 func TestStorageService_Upload_TooLarge(t *testing.T) {
-	svc := NewService(&mockStorageSvc{}, &mockFileRepo{})
+	svc := NewService(&mockStorageSvc{}, scope(&mockFileRepo{}))
 	reader := bytes.NewReader([]byte("data"))
 	_, err := svc.Upload(context.Background(), "user-1", "huge.pdf", "application/pdf", 60*1024*1024, reader)
 
@@ -143,7 +158,7 @@ func TestStorageService_Delete_OwnFile(t *testing.T) {
 		},
 	}
 
-	svc := NewService(storageMock, fileRepo)
+	svc := NewService(storageMock, scope(fileRepo))
 	err := svc.Delete(context.Background(), "user-1", "file-1")
 
 	assert.NoError(t, err)
@@ -162,7 +177,7 @@ func TestStorageService_Delete_OtherUserFile(t *testing.T) {
 		},
 	}
 
-	svc := NewService(&mockStorageSvc{}, fileRepo)
+	svc := NewService(&mockStorageSvc{}, scope(fileRepo))
 	err := svc.Delete(context.Background(), "user-1", "file-1")
 
 	assert.ErrorIs(t, err, domain.ErrForbidden)
