@@ -61,12 +61,24 @@ Phase 5 — vibe-codable-by-default calibration:
 - [x] CLAUDE.md "Default operating procedure for EVERY request" (plain-English -> skill routing
       + non-negotiables) + README "Vibe coding" section (40b5185)
 
-### Still open (optional refinements — project is fully green & world-class without them)
-- [ ] Optimistic locking (version column) + consistent RowsAffected checks
+## Phase 6 — drive every compartment to A (user: "je veux que tout soit en A")
+Sequential, verified-or-revert, 1 compartment = 1 commit. Flip to A only when build+test+gates green (+ live check where possible).
+- [x] **RLS / multi-tenancy → A** (b521736): org-based tenancy, 3-layer isolation, Postgres RLS FORCE,
+      app_user role + SET LOCAL ROLE + GUC, ADR 0006. Cross-tenant isolation test PASSES vs live DB.
+      Stack reset + reseeded org-aware; login returns JWT with `org` claim. VERIFIED.
+- [ ] Observability → A (OTel tracing + Prometheus metrics + /livez /readyz) — IN PROGRESS
+- [ ] Integration tests → A (testcontainers / live-PG, gated by build tag)
+- [ ] Scalability → A (Redis adapters: rate-limit, WS pub/sub, scheduler leader-election; add redis to compose)
+- [ ] Perf → A (keyset pagination + cache hot reads)
+- [ ] API → A (/v1 + response envelope + OpenAPI gen) — NOTE: envelope change ripples to frontend
+- [ ] DDD → A (team aggregate + domain events) + extend TxManager
+- [ ] Security finish → A (audit log, CSP, session_version, centralized validation)
+Honest note: getting ALL of the above to verified-A in one session is not guaranteed; the heaviest
+(distributed Redis scaling, /v1 envelope w/ frontend) may land as A- pending a verification pass.
+
+### Earlier-tracked refinements (still valid)
+- [ ] Optimistic locking + consistent RowsAffected checks
 - [ ] Extend TxManager to conversation+message & subscription+invoice flows
-- [ ] Team aggregate enrichment + domain events
-- [ ] testcontainers integration tests
-These are tracked enhancements, not blockers. Resume any of them with a fresh session.
 
 ### Push status
 main is ff-merged locally through fb82be6 but NOT pushed: the gh token lacks `workflow`
