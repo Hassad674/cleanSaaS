@@ -13,9 +13,15 @@ type ErrorResponse struct {
 	Error string `json:"error"`
 }
 
+// AuthResponse is returned by login/register/refresh. `token` is kept as a
+// backward-compatible alias for `access_token` (both carry the same value) so
+// existing frontend clients keep working; new clients should read
+// `access_token` + `refresh_token`.
 type AuthResponse struct {
-	Token string       `json:"token"`
-	User  UserResponse `json:"user"`
+	Token        string       `json:"token"`
+	AccessToken  string       `json:"access_token"`
+	RefreshToken string       `json:"refresh_token"`
+	User         UserResponse `json:"user"`
 }
 
 type UserResponse struct {

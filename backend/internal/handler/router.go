@@ -73,6 +73,8 @@ func NewRouter(
 		authHandler := NewAuthHandler(authSvc)
 		r.Post("/register", authHandler.Register)
 		r.Post("/login", authHandler.Login)
+		r.Post("/refresh", authHandler.Refresh)
+		r.Post("/logout", authHandler.Logout)
 		r.Post("/forgot-password", authHandler.ForgotPassword)
 		r.Post("/reset-password", authHandler.ResetPassword)
 		r.Post("/verify-email", authHandler.VerifyEmail)

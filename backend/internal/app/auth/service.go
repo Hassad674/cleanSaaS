@@ -17,53 +17,63 @@ import (
 )
 
 type Service struct {
-	users         repository.UserRepository
-	resets        repository.PasswordResetRepository
-	verifications repository.EmailVerificationRepository
-	email         service.EmailService
-	jwtMaker      *jwt.Maker
-	frontendURL   string
+	users           repository.UserRepository
+	resets          repository.PasswordResetRepository
+	verifications   repository.EmailVerificationRepository
+	refreshTokens   repository.RefreshTokenRepository
+	email           service.EmailService
+	jwtMaker        *jwt.Maker
+	frontendURL     string
+	refreshTokenTTL time.Duration
 }
 
-func NewService(
-	users repository.UserRepository,
-	resets repository.PasswordResetRepository,
-	verifications repository.EmailVerificationRepository,
-	email service.EmailService,
-	jwtMaker *jwt.Maker,
-	frontendURL string,
-) *Service {
+// Deps bundles the auth service dependencies. A struct keeps the constructor
+// within the ≤4-parameter limit while staying explicit about wiring.
+type Deps struct {
+	Users           repository.UserRepository
+	Resets          repository.PasswordResetRepository
+	Verifications   repository.EmailVerificationRepository
+	RefreshTokens   repository.RefreshTokenRepository
+	Email           service.EmailService
+	JWTMaker        *jwt.Maker
+	FrontendURL     string
+	RefreshTokenTTL time.Duration
+}
+
+func NewService(deps Deps) *Service {
 	return &Service{
-		users:         users,
-		resets:        resets,
-		verifications: verifications,
-		email:         email,
-		jwtMaker:      jwtMaker,
-		frontendURL:   frontendURL,
+		users:           deps.Users,
+		resets:          deps.Resets,
+		verifications:   deps.Verifications,
+		refreshTokens:   deps.RefreshTokens,
+		email:           deps.Email,
+		jwtMaker:        deps.JWTMaker,
+		frontendURL:     deps.FrontendURL,
+		refreshTokenTTL: deps.RefreshTokenTTL,
 	}
 }
 
-func (s *Service) Register(ctx context.Context, email, name, password string) (*user.User, string, error) {
+func (s *Service) Register(ctx context.Context, email, name, password string) (*user.User, string, string, error) {
 	_, err := s.users.FindByEmail(ctx, email)
 	if err == nil {
-		return nil, "", domain.ErrAlreadyExists
+		return nil, "", "", domain.ErrAlreadyExists
 	}
 	if !errors.Is(err, domain.ErrNotFound) {
-		return nil, "", err
+		return nil, "", "", err
 	}
 
 	hashed, err := hash.Password(password)
 	if err != nil {
-		return nil, "", err
+		return nil, "", "", err
 	}
 
 	u, err := user.New(email, name, hashed)
 	if err != nil {
-		return nil, "", err
+		return nil, "", "", err
 	}
 
 	if err := s.users.Create(ctx, u); err != nil {
-		return nil, "", err
+		return nil, "", "", err
 	}
 
 	// Send verification email asynchronously (don't block registration)
@@ -71,50 +81,139 @@ func (s *Service) Register(ctx context.Context, email, name, password string) (*
 		_ = s.sendVerificationEmail(ctx, u)
 	}
 
-	token, err := s.jwtMaker.Generate(u.ID, string(u.Role))
+	access, refresh, err := s.issueTokens(ctx, u)
 	if err != nil {
-		return nil, "", err
+		return nil, "", "", err
 	}
 
-	return u, token, nil
+	return u, access, refresh, nil
 }
 
-func (s *Service) Login(ctx context.Context, email, password string) (*user.User, string, error) {
+func (s *Service) Login(ctx context.Context, email, password string) (*user.User, string, string, error) {
 	u, err := s.users.FindByEmail(ctx, email)
 	if err != nil {
-		return nil, "", domain.ErrUnauthorized
+		return nil, "", "", domain.ErrUnauthorized
 	}
 
 	if !hash.Check(password, u.PasswordHash) {
-		return nil, "", domain.ErrUnauthorized
+		return nil, "", "", domain.ErrUnauthorized
 	}
 
-	token, err := s.jwtMaker.Generate(u.ID, string(u.Role))
+	access, refresh, err := s.issueTokens(ctx, u)
 	if err != nil {
-		return nil, "", err
+		return nil, "", "", err
 	}
 
-	return u, token, nil
+	return u, access, refresh, nil
 }
 
-func (s *Service) OAuthCallback(ctx context.Context, oauthUser *service.OAuthUser) (*user.User, string, error) {
+func (s *Service) OAuthCallback(ctx context.Context, oauthUser *service.OAuthUser) (*user.User, string, string, error) {
 	u, err := s.users.FindByProvider(ctx, oauthUser.Provider, oauthUser.ProviderID)
 	if errors.Is(err, domain.ErrNotFound) {
 		u = user.NewOAuth(oauthUser.Email, oauthUser.Name, oauthUser.Provider, oauthUser.ProviderID)
 		u.AvatarURL = oauthUser.AvatarURL
 		if err := s.users.Create(ctx, u); err != nil {
-			return nil, "", err
+			return nil, "", "", err
 		}
 	} else if err != nil {
-		return nil, "", err
+		return nil, "", "", err
 	}
 
-	token, err := s.jwtMaker.Generate(u.ID, string(u.Role))
+	access, refresh, err := s.issueTokens(ctx, u)
 	if err != nil {
-		return nil, "", err
+		return nil, "", "", err
 	}
 
-	return u, token, nil
+	return u, access, refresh, nil
+}
+
+// issueTokens mints a short-lived access token and a long-lived opaque refresh
+// token, persisting only the SHA-256 hash of the refresh token. The raw refresh
+// token is returned to the caller and never stored.
+func (s *Service) issueTokens(ctx context.Context, u *user.User) (access, refresh string, err error) {
+	access, err = s.jwtMaker.Generate(u.ID, string(u.Role))
+	if err != nil {
+		return "", "", err
+	}
+
+	refresh, err = s.storeRefreshToken(ctx, u.ID)
+	if err != nil {
+		return "", "", err
+	}
+
+	return access, refresh, nil
+}
+
+// storeRefreshToken generates an opaque refresh token, persists its hash, and
+// returns the raw token to hand back to the client.
+func (s *Service) storeRefreshToken(ctx context.Context, userID string) (string, error) {
+	raw, err := jwt.GenerateRefreshToken()
+	if err != nil {
+		return "", fmt.Errorf("generating refresh token: %w", err)
+	}
+
+	rt := &repository.RefreshToken{
+		UserID:    userID,
+		TokenHash: jwt.HashRefreshToken(raw),
+		ExpiresAt: time.Now().Add(s.refreshTokenTTL),
+	}
+	if err := s.refreshTokens.Create(ctx, rt); err != nil {
+		return "", fmt.Errorf("storing refresh token: %w", err)
+	}
+
+	return raw, nil
+}
+
+// Refresh validates an opaque refresh token, rotates it (revokes the presented
+// token and issues a fresh one), and returns a new access token. Rotation makes
+// refresh-token reuse detectable: a revoked/expired token is rejected outright.
+func (s *Service) Refresh(ctx context.Context, refreshToken string) (newAccess, newRefresh string, u *user.User, err error) {
+	hashed := jwt.HashRefreshToken(refreshToken)
+
+	rt, err := s.refreshTokens.FindByHash(ctx, hashed)
+	if err != nil {
+		// Missing token (or any lookup failure) is unauthorized — do not leak detail.
+		return "", "", nil, domain.ErrUnauthorized
+	}
+
+	if !rt.IsValid(time.Now()) {
+		// Expired or already-revoked: reject. If it was revoked, this is a
+		// potential reuse signal a caller could escalate in the future.
+		return "", "", nil, domain.ErrUnauthorized
+	}
+
+	u, err = s.users.FindByID(ctx, rt.UserID)
+	if err != nil {
+		return "", "", nil, domain.ErrUnauthorized
+	}
+
+	// Rotate: revoke the presented token, then mint a replacement pair.
+	if err := s.refreshTokens.Revoke(ctx, hashed); err != nil {
+		return "", "", nil, fmt.Errorf("revoking rotated refresh token: %w", err)
+	}
+
+	newAccess, newRefresh, err = s.issueTokens(ctx, u)
+	if err != nil {
+		return "", "", nil, err
+	}
+
+	return newAccess, newRefresh, u, nil
+}
+
+// Logout revokes a single refresh token so it can no longer be used to obtain
+// new access tokens. The access token remains valid until it expires (short TTL
+// is the accepted revocation window).
+func (s *Service) Logout(ctx context.Context, refreshToken string) error {
+	hashed := jwt.HashRefreshToken(refreshToken)
+	if err := s.refreshTokens.Revoke(ctx, hashed); err != nil {
+		// An unknown/already-revoked token is not an error for logout — the
+		// desired end state (no usable session) is already met.
+		if errors.Is(err, domain.ErrNotFound) {
+			return nil
+		}
+		return fmt.Errorf("revoking refresh token on logout: %w", err)
+	}
+	return nil
 }
 
 // ForgotPassword generates a password reset token and sends a reset email.
@@ -287,6 +386,14 @@ func (s *Service) ResetPassword(ctx context.Context, token, newPassword string) 
 	// Mark the token as used
 	if err := s.resets.MarkUsed(ctx, pr.ID); err != nil {
 		return fmt.Errorf("marking reset token as used: %w", err)
+	}
+
+	// Invalidate every existing session: a password reset must log out all
+	// refresh tokens so a compromised/old session cannot survive the reset.
+	if s.refreshTokens != nil {
+		if err := s.refreshTokens.RevokeAllForUser(ctx, u.ID); err != nil {
+			return fmt.Errorf("revoking refresh tokens after password reset: %w", err)
+		}
 	}
 
 	return nil

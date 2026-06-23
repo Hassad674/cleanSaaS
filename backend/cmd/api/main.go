@@ -48,9 +48,10 @@ func main() {
 	userRepo := postgres.NewUserRepository(db)
 	passwordResetRepo := postgres.NewPasswordResetRepository(db)
 	emailVerificationRepo := postgres.NewEmailVerificationRepository(db)
+	refreshTokenRepo := postgres.NewRefreshTokenRepository(db)
 
-	// JWT
-	jwtMaker := jwt.NewMaker(cfg.JWTSecret)
+	// JWT (short-lived access tokens with configurable TTL/iss/aud)
+	jwtMaker := jwt.NewMakerWithOptions(cfg.JWTSecret, cfg.AccessTokenTTL, cfg.JWTIssuer, cfg.JWTAudience)
 
 	// External services
 	var emailSvc service.EmailService
@@ -115,7 +116,16 @@ func main() {
 	teamSvc := appteam.NewService(teamRepo, memberRepo, txManager)
 
 	// App services
-	authSvc := appauth.NewService(userRepo, passwordResetRepo, emailVerificationRepo, emailSvc, jwtMaker, cfg.FrontendURL)
+	authSvc := appauth.NewService(appauth.Deps{
+		Users:           userRepo,
+		Resets:          passwordResetRepo,
+		Verifications:   emailVerificationRepo,
+		RefreshTokens:   refreshTokenRepo,
+		Email:           emailSvc,
+		JWTMaker:        jwtMaker,
+		FrontendURL:     cfg.FrontendURL,
+		RefreshTokenTTL: cfg.RefreshTokenTTL,
+	})
 	userSvc := appuser.NewService(userRepo)
 
 	// Router
@@ -144,6 +154,13 @@ func main() {
 		Interval: 1 * time.Hour,
 		Fn: func(ctx context.Context) error {
 			return emailVerificationRepo.DeleteExpired(ctx)
+		},
+	})
+	scheduler.Register(jobs.Job{
+		Name:     "clean-expired-refresh-tokens",
+		Interval: 1 * time.Hour,
+		Fn: func(ctx context.Context) error {
+			return refreshTokenRepo.DeleteExpired(ctx)
 		},
 	})
 	scheduler.Register(jobs.Job{

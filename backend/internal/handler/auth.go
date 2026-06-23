@@ -46,15 +46,17 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	u, token, err := h.svc.Register(r.Context(), req.Email, req.Name, req.Password)
+	u, access, refresh, err := h.svc.Register(r.Context(), req.Email, req.Name, req.Password)
 	if err != nil {
 		response.HandleDomainError(w, err)
 		return
 	}
 
 	response.JSON(w, http.StatusCreated, response.AuthResponse{
-		Token: token,
-		User:  response.UserFromDomain(u),
+		Token:        access,
+		AccessToken:  access,
+		RefreshToken: refresh,
+		User:         response.UserFromDomain(u),
 	})
 }
 
@@ -65,15 +67,69 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	u, token, err := h.svc.Login(r.Context(), req.Email, req.Password)
+	u, access, refresh, err := h.svc.Login(r.Context(), req.Email, req.Password)
 	if err != nil {
 		response.HandleDomainError(w, err)
 		return
 	}
 
 	response.JSON(w, http.StatusOK, response.AuthResponse{
-		Token: token,
-		User:  response.UserFromDomain(u),
+		Token:        access,
+		AccessToken:  access,
+		RefreshToken: refresh,
+		User:         response.UserFromDomain(u),
+	})
+}
+
+// Refresh exchanges a valid refresh token for a new access/refresh token pair
+// (the presented refresh token is rotated out and revoked).
+func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
+	var req request.RefreshRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		response.Error(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	if req.RefreshToken == "" {
+		response.Error(w, http.StatusBadRequest, "refresh_token is required")
+		return
+	}
+
+	access, refresh, u, err := h.svc.Refresh(r.Context(), req.RefreshToken)
+	if err != nil {
+		response.HandleDomainError(w, err)
+		return
+	}
+
+	response.JSON(w, http.StatusOK, response.AuthResponse{
+		Token:        access,
+		AccessToken:  access,
+		RefreshToken: refresh,
+		User:         response.UserFromDomain(u),
+	})
+}
+
+// Logout revokes the presented refresh token. It is idempotent — an unknown or
+// already-revoked token still returns success.
+func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
+	var req request.LogoutRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		response.Error(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	if req.RefreshToken == "" {
+		response.Error(w, http.StatusBadRequest, "refresh_token is required")
+		return
+	}
+
+	if err := h.svc.Logout(r.Context(), req.RefreshToken); err != nil {
+		response.HandleDomainError(w, err)
+		return
+	}
+
+	response.JSON(w, http.StatusOK, map[string]string{
+		"message": "logged out successfully",
 	})
 }
 

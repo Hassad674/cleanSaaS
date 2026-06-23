@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"strings"
+	"time"
 )
 
 // defaultJWTSecret is the local-development fallback. It is intentionally weak and
@@ -21,6 +22,12 @@ type Config struct {
 	DatabaseURL string
 	JWTSecret   string
 	FrontendURL string
+
+	// JWT lifecycle
+	AccessTokenTTL  time.Duration // short-lived access token (default 15m)
+	RefreshTokenTTL time.Duration // long-lived refresh token (default 720h / 30d)
+	JWTIssuer       string        // "iss" claim (default "cleansaas")
+	JWTAudience     string        // "aud" claim (default "cleansaas")
 
 	// Stripe
 	StripeKey           string
@@ -54,6 +61,10 @@ func Load() *Config {
 		DatabaseURL:         cleanDSN(env("DATABASE_URL", "postgres://postgres:postgres@localhost:5433/cleansaas?sslmode=disable")),
 		JWTSecret:           env("JWT_SECRET", defaultJWTSecret),
 		FrontendURL:         env("FRONTEND_URL", "http://localhost:3010"),
+		AccessTokenTTL:      envDuration("ACCESS_TOKEN_TTL", 15*time.Minute),
+		RefreshTokenTTL:     envDuration("REFRESH_TOKEN_TTL", 720*time.Hour),
+		JWTIssuer:           env("JWT_ISSUER", "cleansaas"),
+		JWTAudience:         env("JWT_AUDIENCE", "cleansaas"),
 		StripeKey:           env("STRIPE_SECRET_KEY", ""),
 		StripeWebhookSecret: env("STRIPE_WEBHOOK_SECRET", ""),
 		ResendKey:           env("RESEND_API_KEY", ""),
@@ -121,6 +132,21 @@ func env(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+// envDuration reads a Go duration string (e.g. "15m", "720h") from the
+// environment, falling back to the provided default when unset or unparseable.
+func envDuration(key string, fallback time.Duration) time.Duration {
+	v := os.Getenv(key)
+	if v == "" {
+		return fallback
+	}
+	d, err := time.ParseDuration(v)
+	if err != nil {
+		log.Printf("WARNING: invalid duration for %s=%q, using default %s", key, v, fallback)
+		return fallback
+	}
+	return d
 }
 
 func cleanDSN(dsn string) string {

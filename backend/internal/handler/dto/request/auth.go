@@ -23,3 +23,11 @@ type ResetPasswordRequest struct {
 type VerifyEmailRequest struct {
 	Token string `json:"token"`
 }
+
+type RefreshRequest struct {
+	RefreshToken string `json:"refresh_token"`
+}
+
+type LogoutRequest struct {
+	RefreshToken string `json:"refresh_token"`
+}
