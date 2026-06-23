@@ -24,6 +24,12 @@ type Config struct {
 	JWTSecret   string
 	FrontendURL string
 
+	// RedisURL enables the shared, multi-instance-safe components (distributed
+	// rate limiter and cross-instance WebSocket fan-out). When empty (the default),
+	// the app falls back to single-instance in-memory behavior so it still works
+	// out-of-the-box with no Redis. Format: "redis://[:password@]host:port[/db]".
+	RedisURL string
+
 	// JWT lifecycle
 	AccessTokenTTL  time.Duration // short-lived access token (default 15m)
 	RefreshTokenTTL time.Duration // long-lived refresh token (default 720h / 30d)
@@ -74,6 +80,7 @@ func Load() *Config {
 		DatabaseURL:         cleanDSN(env("DATABASE_URL", "postgres://postgres:postgres@localhost:5433/cleansaas?sslmode=disable")),
 		JWTSecret:           env("JWT_SECRET", defaultJWTSecret),
 		FrontendURL:         env("FRONTEND_URL", "http://localhost:3010"),
+		RedisURL:            env("REDIS_URL", ""),
 		AccessTokenTTL:      envDuration("ACCESS_TOKEN_TTL", 15*time.Minute),
 		RefreshTokenTTL:     envDuration("REFRESH_TOKEN_TTL", 720*time.Hour),
 		JWTIssuer:           env("JWT_ISSUER", "cleansaas"),

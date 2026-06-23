@@ -17,6 +17,24 @@ services:
       timeout: 5s
       retries: 10
 
+  # Redis is OPTIONAL. The backend works out-of-the-box without it (it falls back
+  # to single-instance in-memory rate limiting and a local-only WebSocket hub).
+  # Set REDIS_URL=redis://localhost:6379 to enable the shared, multi-instance-safe
+  # components (distributed rate limiter + cross-instance WebSocket fan-out).
+  redis:
+    image: redis:7-alpine
+    container_name: cleansaas-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
   dbgate:
     image: dbgate/dbgate
     container_name: cleansaas-dbgate
@@ -37,3 +55,4 @@ services:
 
 volumes:
   pgdata:
+  redisdata:

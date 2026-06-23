@@ -8,13 +8,42 @@ import (
 	"github.com/hassad/boilerplateSaaS/backend/internal/handler/dto/response"
 )
 
+// Limiter is the rate-limiting abstraction the middleware depends on. It lets
+// the app swap a single-instance in-memory limiter for a distributed
+// (Redis-backed) one without the HTTP layer knowing which is in use. Allow
+// reports whether the given key (client IP) may proceed; Stop releases any
+// background resources held by the implementation.
+type Limiter interface {
+	Allow(key string) bool
+	Stop()
+}
+
+// NewLimiter builds a Limiter allowing requestsPerMinute per client IP, in a
+// distinct keyspace (so independent limiters never share counters). The
+// composition root injects this so the router does not need to know whether the
+// backing store is in-memory or Redis. Each call to a NewLimiter implementation
+// returns a fresh limiter the router owns for the lifetime of its routes.
+type NewLimiter func(requestsPerMinute float64, keyspace string) Limiter
+
+// InMemoryLimiterFactory returns a NewLimiter that always builds the in-process
+// token-bucket limiter, ignoring the keyspace (each limiter holds its own map).
+// This is the default and the fail-open fallback when no Redis is configured.
+func InMemoryLimiterFactory() NewLimiter {
+	return func(requestsPerMinute float64, _ string) Limiter {
+		return NewRateLimiter(requestsPerMinute)
+	}
+}
+
 // bucket holds the token bucket state for one IP.
 type bucket struct {
 	tokens    float64
 	lastCheck time.Time
 }
 
-// RateLimiter implements a token-bucket rate limiter per IP.
+// RateLimiter is the in-process, single-instance token-bucket limiter (per IP).
+// It is the default and the fail-open fallback when no Redis is configured.
+// Across multiple instances its limits multiply per instance — use the
+// Redis-backed Limiter for horizontally-scaled deployments.
 type RateLimiter struct {
 	mu       sync.Mutex
 	buckets  map[string]*bucket
@@ -104,8 +133,10 @@ var rateLimitExemptPaths = map[string]bool{
 }
 
 // RateLimit returns middleware that rate-limits by client IP, exempting the
-// operational endpoints in rateLimitExemptPaths.
-func RateLimit(limiter *RateLimiter) func(http.Handler) http.Handler {
+// operational endpoints in rateLimitExemptPaths. It depends on the Limiter
+// abstraction, so the same middleware works with either the in-memory limiter
+// (single instance) or a Redis-backed one (shared across instances).
+func RateLimit(limiter Limiter) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if rateLimitExemptPaths[r.URL.Path] {

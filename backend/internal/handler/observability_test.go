@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/hassad/boilerplateSaaS/backend/internal/handler/middleware"
 	"github.com/hassad/boilerplateSaaS/backend/pkg/observability"
 )
 
@@ -77,6 +78,7 @@ func newTestRouter(t *testing.T, db *sql.DB, metrics *observability.Metrics) htt
 		nil,      // demoAI
 		resolver, // orgResolver
 		metrics,
+		middleware.InMemoryLimiterFactory(), // newLimiter
 	)
 }
 

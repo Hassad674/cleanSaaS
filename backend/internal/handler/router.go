@@ -45,12 +45,15 @@ func NewRouter(
 	demoAI service.AIService,
 	orgResolver middleware.OrgResolver,
 	metrics *observability.Metrics,
+	newLimiter middleware.NewLimiter,
 ) http.Handler {
 	r := chi.NewRouter()
 
-	// Rate limiters
-	apiLimiter := middleware.NewRateLimiter(100) // 100 req/min for API
-	authLimiter := middleware.NewRateLimiter(10) // 10 req/min for auth
+	// Rate limiters. newLimiter is injected by the composition root: in-memory
+	// (single instance) when no Redis is configured, Redis-backed (shared across
+	// instances) otherwise. Each keyspace gets its own independent counter.
+	apiLimiter := newLimiter(100, "api")  // 100 req/min for API
+	authLimiter := newLimiter(10, "auth") // 10 req/min for auth
 
 	// Global middleware. Order (outermost first) matters:
 	//   RequestID  — establish/echo X-Request-ID before anything can fail.
@@ -110,7 +113,7 @@ func NewRouter(
 		r.Post("/webhooks/stripe", billingHandler.HandleWebhook)
 
 		// Public demo billing (no auth required, real Stripe in test mode)
-		demoBillingLimiter := middleware.NewRateLimiter(20)
+		demoBillingLimiter := newLimiter(20, "demo-billing")
 		r.Route("/demo/billing", func(r chi.Router) {
 			r.Use(middleware.RateLimit(demoBillingLimiter))
 			r.Post("/checkout", billingHandler.DemoCheckout)
@@ -128,7 +131,7 @@ func NewRouter(
 	// Public demo AI chat (no auth required, no DB persistence)
 	if demoAI != nil {
 		demoHandler := NewDemoHandler(demoAI)
-		demoLimiter := middleware.NewRateLimiter(20) // 20 req/min for demo
+		demoLimiter := newLimiter(20, "demo-ai") // 20 req/min for demo
 		r.Route("/demo/ai", func(r chi.Router) {
 			r.Use(middleware.RateLimit(demoLimiter))
 			r.Post("/chat", demoHandler.StreamChat)
@@ -138,7 +141,7 @@ func NewRouter(
 	// Public demo storage (no auth required, uses fixed demo user ID)
 	if storageSvc != nil {
 		demoStorageHandler := NewDemoStorageHandler(storageSvc)
-		demoStorageLimiter := middleware.NewRateLimiter(20) // 20 req/min for demo
+		demoStorageLimiter := newLimiter(20, "demo-storage") // 20 req/min for demo
 		r.Route("/demo/storage", func(r chi.Router) {
 			r.Use(middleware.RateLimit(demoStorageLimiter))
 			r.With(middleware.MaxBodySize(10<<20)).Post("/upload", demoStorageHandler.Upload)

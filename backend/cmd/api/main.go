@@ -13,6 +13,7 @@ import (
 	adaptgemini "github.com/hassad/boilerplateSaaS/backend/internal/adapter/gemini"
 	"github.com/hassad/boilerplateSaaS/backend/internal/adapter/postgres"
 	adaptr2 "github.com/hassad/boilerplateSaaS/backend/internal/adapter/r2"
+	adaptredis "github.com/hassad/boilerplateSaaS/backend/internal/adapter/redis"
 	"github.com/hassad/boilerplateSaaS/backend/internal/adapter/resend"
 	adaptstripe "github.com/hassad/boilerplateSaaS/backend/internal/adapter/stripe"
 	appai "github.com/hassad/boilerplateSaaS/backend/internal/app/ai"
@@ -26,11 +27,13 @@ import (
 	appuser "github.com/hassad/boilerplateSaaS/backend/internal/app/user"
 	"github.com/hassad/boilerplateSaaS/backend/internal/config"
 	"github.com/hassad/boilerplateSaaS/backend/internal/handler"
+	"github.com/hassad/boilerplateSaaS/backend/internal/handler/middleware"
 	"github.com/hassad/boilerplateSaaS/backend/internal/port/service"
 	"github.com/hassad/boilerplateSaaS/backend/pkg/jobs"
 	"github.com/hassad/boilerplateSaaS/backend/pkg/jwt"
 	"github.com/hassad/boilerplateSaaS/backend/pkg/observability"
 	"github.com/hassad/boilerplateSaaS/backend/pkg/ws"
+	goredis "github.com/redis/go-redis/v9"
 )
 
 func main() {
@@ -56,6 +59,19 @@ func main() {
 	// Database
 	db := postgres.NewDB(cfg.DatabaseURL)
 	defer db.Close()
+
+	// Redis (optional). When REDIS_URL is set, it backs the shared, multi-instance
+	// components (distributed rate limiter, cross-instance WebSocket fan-out). If it
+	// is unset or unreachable we FAIL OPEN to single-instance in-memory behavior —
+	// a missing/broken cache must never prevent the app from starting.
+	redisClient := connectRedis(cfg.RedisURL, logger)
+	if redisClient != nil {
+		defer redisClient.Close()
+	}
+
+	// Rate-limiter factory injected into the router: Redis-backed (limits shared
+	// across instances) when Redis is available, else the in-memory fallback.
+	newLimiter := buildLimiterFactory(redisClient, logger)
 
 	// Prometheus metrics (dedicated registry). The HTTP middleware records
 	// request count/latency; a gauge reports DB pool in-use connections.
@@ -144,8 +160,18 @@ func main() {
 	wsHub := ws.NewHub()
 	go wsHub.Run()
 
-	// Wire WebSocket broadcaster into notification service
-	notifSvc.SetBroadcaster(wsHub)
+	// Wire the WebSocket broadcaster into the notification service. With Redis, a
+	// pub/sub-backed broadcaster fans messages out across instances so SendToUser
+	// reaches a user's sockets on ANY instance (not just the one handling the
+	// request); without Redis the hub delivers to its local sockets as before.
+	var wsBroadcaster *adaptredis.Broadcaster
+	if redisClient != nil {
+		wsBroadcaster = adaptredis.NewBroadcaster(redisClient, wsHub, logger)
+		notifSvc.SetBroadcaster(wsBroadcaster)
+		logger.Info("websocket cross-instance fan-out enabled (redis pub/sub)")
+	} else {
+		notifSvc.SetBroadcaster(wsHub)
+	}
 
 	// Blog
 	blogRepo := postgres.NewBlogRepository(db)
@@ -176,7 +202,7 @@ func main() {
 	// Router. The org resolver turns an authenticated user into an authorized
 	// active organization for each request (verifying membership of any explicit
 	// org claim, else the user's default org).
-	router := handler.NewRouter(authSvc, userSvc, billingSvc, storageSvc, aiSvc, notifSvc, blogSvc, teamSvc, wsHub, cfg.JWTSecret, cfg.FrontendURL, db, logger, demoAI, orgSvc.ResolveActiveOrg, metrics)
+	router := handler.NewRouter(authSvc, userSvc, billingSvc, storageSvc, aiSvc, notifSvc, blogSvc, teamSvc, wsHub, cfg.JWTSecret, cfg.FrontendURL, db, logger, demoAI, orgSvc.ResolveActiveOrg, metrics, newLimiter)
 
 	// HTTP server
 	srv := &http.Server{
@@ -189,7 +215,15 @@ func main() {
 
 	// Background job scheduler. Each job invocation is bounded by cfg.JobTimeout
 	// so a stuck cleanup (slow query / hung call) can never run unbounded.
+	//
+	// Leader election: a Postgres advisory lock makes the scheduler multi-instance
+	// safe with ZERO extra infrastructure. Each tick first tries to acquire a
+	// per-job advisory lock keyed on a hash of the job name; if another instance
+	// holds it, this tick is skipped — so a job runs at most once across the
+	// cluster rather than N times. Single-instance behavior is unchanged (the one
+	// instance always wins its own lock).
 	scheduler := jobs.NewSchedulerWithTimeout(logger, cfg.JobTimeout)
+	scheduler.SetLock(postgres.NewAdvisoryLock(db, logger))
 	scheduler.Register(jobs.Job{
 		Name:     "clean-expired-password-resets",
 		Interval: 1 * time.Hour,
@@ -244,6 +278,9 @@ func main() {
 	logger.Info("shutdown signal received", slog.String("signal", sig.String()))
 
 	scheduler.Stop()
+	if wsBroadcaster != nil {
+		wsBroadcaster.Stop()
+	}
 	wsHub.Stop()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -262,4 +299,36 @@ func main() {
 
 	db.Close()
 	logger.Info("server stopped gracefully")
+}
+
+// connectRedis returns a connected Redis client when url is set and reachable,
+// else nil. It FAILS OPEN: an empty url disables Redis silently (the out-of-the-box
+// path), and an unreachable Redis logs a warning and returns nil rather than
+// crashing — the caller then uses single-instance in-memory fallbacks.
+func connectRedis(url string, logger *slog.Logger) *goredis.Client {
+	if url == "" {
+		logger.Info("REDIS_URL not set — using single-instance in-memory rate limiter and WebSocket hub")
+		return nil
+	}
+	client, err := adaptredis.Connect(url)
+	if err != nil {
+		logger.Warn("redis unreachable — falling back to single-instance in-memory behavior",
+			slog.String("error", err.Error()),
+		)
+		return nil
+	}
+	logger.Info("connected to redis — distributed rate limiting enabled")
+	return client
+}
+
+// buildLimiterFactory returns the rate-limiter factory injected into the router:
+// a Redis-backed factory (limits shared across instances) when a Redis client is
+// available, otherwise the in-memory factory (single-instance fallback).
+func buildLimiterFactory(client *goredis.Client, logger *slog.Logger) middleware.NewLimiter {
+	if client == nil {
+		return middleware.InMemoryLimiterFactory()
+	}
+	return func(requestsPerMinute float64, keyspace string) middleware.Limiter {
+		return adaptredis.NewRateLimiter(client, requestsPerMinute, keyspace, logger)
+	}
 }
