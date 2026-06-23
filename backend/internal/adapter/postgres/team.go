@@ -145,7 +145,7 @@ func newTeamMemberRepositoryTx(tx DBTX) *TeamMemberRepository {
 func (r *TeamMemberRepository) Add(ctx context.Context, member *team.TeamMember) error {
 	err := r.db.QueryRowContext(ctx,
 		`INSERT INTO team_members (team_id, user_id, role, invited_email, invite_token, invite_status, joined_at, created_at)
-		 VALUES ($1, NULLIF($2, ''), $3, NULLIF($4, ''), NULLIF($5, ''), $6, $7, $8)
+		 VALUES ($1, NULLIF($2, '')::uuid, $3, NULLIF($4, ''), NULLIF($5, ''), $6, $7, $8)
 		 RETURNING id`,
 		member.TeamID, member.UserID, string(member.Role), member.InvitedEmail, member.InviteToken, string(member.InviteStatus), member.JoinedAt, member.CreatedAt,
 	).Scan(&member.ID)
@@ -256,7 +256,7 @@ func (r *TeamMemberRepository) FindByInviteToken(ctx context.Context, token stri
 
 func (r *TeamMemberRepository) Update(ctx context.Context, member *team.TeamMember) error {
 	result, err := r.db.ExecContext(ctx,
-		`UPDATE team_members SET user_id = NULLIF($1, ''), role = $2, invite_status = $3, joined_at = $4
+		`UPDATE team_members SET user_id = NULLIF($1, '')::uuid, role = $2, invite_status = $3, joined_at = $4
 		 WHERE id = $5`,
 		member.UserID, string(member.Role), string(member.InviteStatus), member.JoinedAt, member.ID,
 	)

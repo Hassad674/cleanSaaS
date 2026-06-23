@@ -13,7 +13,7 @@ test-unit:
 	go test ./internal/domain/... ./internal/app/... ./pkg/... -v
 
 test-integration:
-	go test ./test/... -v
+	set -a && [ -f .env ] && . ./.env; set +a; go test -tags=integration ./internal/adapter/postgres/... -v -count=1
 
 # Migrations
 migrate-up:
