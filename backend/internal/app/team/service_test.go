@@ -65,14 +65,14 @@ func (m *mockTeamRepo) ListByUserID(ctx context.Context, userID string) ([]*doma
 }
 
 type mockMemberRepo struct {
-	addFn              func(ctx context.Context, member *domainteam.TeamMember) error
-	findByIDFn         func(ctx context.Context, id string) (*domainteam.TeamMember, error)
+	addFn               func(ctx context.Context, member *domainteam.TeamMember) error
+	findByIDFn          func(ctx context.Context, id string) (*domainteam.TeamMember, error)
 	findByTeamAndUserFn func(ctx context.Context, teamID, userID string) (*domainteam.TeamMember, error)
 	findByInviteTokenFn func(ctx context.Context, token string) (*domainteam.TeamMember, error)
-	updateFn           func(ctx context.Context, member *domainteam.TeamMember) error
-	removeFn           func(ctx context.Context, teamID, userID string) error
-	listByTeamIDFn     func(ctx context.Context, teamID string, offset, limit int) ([]*domainteam.TeamMember, int, error)
-	countByTeamIDFn    func(ctx context.Context, teamID string) (int, error)
+	updateFn            func(ctx context.Context, member *domainteam.TeamMember) error
+	removeFn            func(ctx context.Context, teamID, userID string) error
+	listByTeamIDFn      func(ctx context.Context, teamID string, offset, limit int) ([]*domainteam.TeamMember, int, error)
+	countByTeamIDFn     func(ctx context.Context, teamID string) (int, error)
 }
 
 func (m *mockMemberRepo) Add(ctx context.Context, member *domainteam.TeamMember) error {
@@ -190,23 +190,47 @@ func TestService_CreateTeam_AddsOwnerAsMember(t *testing.T) {
 
 // --- GetTeam ---
 
+// memberRepoWithMember returns a member repo whose membership lookup always succeeds.
+func memberRepoWithMember(role domainteam.Role) *mockMemberRepo {
+	return &mockMemberRepo{
+		findByTeamAndUserFn: func(_ context.Context, _, _ string) (*domainteam.TeamMember, error) {
+			return &domainteam.TeamMember{Role: role}, nil
+		},
+	}
+}
+
 func TestService_GetTeam_Success(t *testing.T) {
 	teamRepo := &mockTeamRepo{
 		findByIDFn: func(_ context.Context, id string) (*domainteam.Team, error) {
 			return &domainteam.Team{ID: id, Name: "Test Team"}, nil
 		},
 	}
-	svc := NewService(teamRepo, &mockMemberRepo{})
+	svc := NewService(teamRepo, memberRepoWithMember(domainteam.RoleMember))
 
-	tm, err := svc.GetTeam(context.Background(), "team-1")
+	tm, err := svc.GetTeam(context.Background(), "user-1", "team-1")
 	assert.NoError(t, err)
 	assert.Equal(t, "team-1", tm.ID)
 }
 
-func TestService_GetTeam_NotFound(t *testing.T) {
-	svc := NewService(&mockTeamRepo{}, &mockMemberRepo{})
+// IDOR guard: a non-member must not be able to read a team by ID.
+func TestService_GetTeam_NonMemberForbidden(t *testing.T) {
+	teamRepo := &mockTeamRepo{
+		findByIDFn: func(_ context.Context, id string) (*domainteam.Team, error) {
+			return &domainteam.Team{ID: id, Name: "Secret Team"}, nil
+		},
+	}
+	// default mockMemberRepo: FindByTeamAndUser returns ErrNotFound (not a member)
+	svc := NewService(teamRepo, &mockMemberRepo{})
 
-	_, err := svc.GetTeam(context.Background(), "nonexistent")
+	_, err := svc.GetTeam(context.Background(), "outsider", "team-1")
+	assert.ErrorIs(t, err, domain.ErrForbidden)
+}
+
+func TestService_GetTeam_NotFound(t *testing.T) {
+	// Member exists, but the team itself is missing.
+	svc := NewService(&mockTeamRepo{}, memberRepoWithMember(domainteam.RoleMember))
+
+	_, err := svc.GetTeam(context.Background(), "user-1", "nonexistent")
 	assert.Error(t, err)
 }
 
@@ -218,11 +242,24 @@ func TestService_GetTeamBySlug_Success(t *testing.T) {
 			return &domainteam.Team{ID: "team-1", Slug: slug}, nil
 		},
 	}
-	svc := NewService(teamRepo, &mockMemberRepo{})
+	svc := NewService(teamRepo, memberRepoWithMember(domainteam.RoleMember))
 
-	tm, err := svc.GetTeamBySlug(context.Background(), "my-team")
+	tm, err := svc.GetTeamBySlug(context.Background(), "user-1", "my-team")
 	assert.NoError(t, err)
 	assert.Equal(t, "my-team", tm.Slug)
+}
+
+// IDOR guard: a non-member must not be able to read a team by slug.
+func TestService_GetTeamBySlug_NonMemberForbidden(t *testing.T) {
+	teamRepo := &mockTeamRepo{
+		findBySlugFn: func(_ context.Context, slug string) (*domainteam.Team, error) {
+			return &domainteam.Team{ID: "team-1", Slug: slug}, nil
+		},
+	}
+	svc := NewService(teamRepo, &mockMemberRepo{})
+
+	_, err := svc.GetTeamBySlug(context.Background(), "outsider", "my-team")
+	assert.ErrorIs(t, err, domain.ErrForbidden)
 }
 
 // --- UpdateTeam ---

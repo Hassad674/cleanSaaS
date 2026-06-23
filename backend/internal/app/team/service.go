@@ -53,8 +53,14 @@ func (s *Service) CreateTeam(ctx context.Context, userID, name string) (*domaint
 	return t, nil
 }
 
-// GetTeam returns a team by its ID.
-func (s *Service) GetTeam(ctx context.Context, teamID string) (*domainteam.Team, error) {
+// GetTeam returns a team by its ID. The caller MUST be a member of the team —
+// membership is verified first so a non-member cannot read a team by guessing its ID
+// (prevents an IDOR), and cannot even distinguish a forbidden team from a missing one.
+func (s *Service) GetTeam(ctx context.Context, userID, teamID string) (*domainteam.Team, error) {
+	if _, err := s.members.FindByTeamAndUser(ctx, teamID, userID); err != nil {
+		return nil, fmt.Errorf("checking membership: %w", domain.ErrForbidden)
+	}
+
 	t, err := s.teams.FindByID(ctx, teamID)
 	if err != nil {
 		return nil, fmt.Errorf("finding team: %w", err)
@@ -62,11 +68,15 @@ func (s *Service) GetTeam(ctx context.Context, teamID string) (*domainteam.Team,
 	return t, nil
 }
 
-// GetTeamBySlug returns a team by its slug.
-func (s *Service) GetTeamBySlug(ctx context.Context, slug string) (*domainteam.Team, error) {
+// GetTeamBySlug returns a team by its slug. The caller MUST be a member of the team.
+func (s *Service) GetTeamBySlug(ctx context.Context, userID, slug string) (*domainteam.Team, error) {
 	t, err := s.teams.FindBySlug(ctx, slug)
 	if err != nil {
 		return nil, fmt.Errorf("finding team by slug: %w", err)
+	}
+
+	if _, err := s.members.FindByTeamAndUser(ctx, t.ID, userID); err != nil {
+		return nil, fmt.Errorf("checking membership: %w", domain.ErrForbidden)
 	}
 	return t, nil
 }

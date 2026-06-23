@@ -65,9 +65,10 @@ func (h *TeamHandler) List(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *TeamHandler) Get(w http.ResponseWriter, r *http.Request) {
+	userID := middleware.UserIDFromContext(r.Context())
 	teamID := chi.URLParam(r, "id")
 
-	t, err := h.svc.GetTeam(r.Context(), teamID)
+	t, err := h.svc.GetTeam(r.Context(), userID, teamID)
 	if err != nil {
 		response.HandleDomainError(w, err)
 		return
