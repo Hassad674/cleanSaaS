@@ -46,16 +46,24 @@ AI-generated code to stay maintainable/performant/secure, usable by beginners AN
 - team IDOR fix (beb0a1d)
 - Stripe webhook idempotency + retry-safety (8c4b1c3) + gofmt of 3 pre-existing files (8e1571d)
 - atomic CreateTeam via DBTX + TxManager unit-of-work (9f222a8)
+- JWT short access + rotating/revocable refresh tokens (46b92a2)
+- context timeout/cancellation discipline (stripe honors ctx, job/external/DB timeouts) (fb82be6)
 
-### REMAINING (for next session — resume here)
+### REMAINING
 Phase 3 (P0) leftovers:
-- [ ] JWT refresh tokens + revocation (session_version / jti), iss/aud, short access TTL. BIG feature: migration + pkg/jwt + app/auth + middleware/auth + config + handler. Highest security value.
-- [ ] Per-query/per-external-call context timeouts (context.WithTimeout in repos + stop discarding ctx in stripe adapter). Cross-cutting, mechanical.
 - [ ] Optimistic locking (version column) on mutable aggregates + consistent RowsAffected checks.
-- [ ] Extend the TxManager pattern to the other multi-write flows (conversation+message; subscription+invoice) — pattern already established in 9f222a8.
-Phase 4 (targeted DDD) — entirely remaining:
-- [ ] Value objects (Email/Money/Slug/PlanInterval), rich billing + team aggregates, domain events, thin services; testcontainers integration tests.
-Recommend tackling JWT refresh first (security), then context timeouts, then Phase 4 DDD.
+- [ ] Extend the TxManager pattern to other multi-write flows (conversation+message; subscription+invoice).
+Phase 4 (targeted DDD) — IN PROGRESS:
+- [~] Value objects (Email/Money/Slug/PlanInterval) + rich billing Subscription aggregate + thin service (agent running)
+- [ ] Rich team aggregate methods + domain events mechanism
+- [ ] testcontainers integration tests for postgres adapters
+Phase 5 (NEW, per user) — vibe-codable-by-default calibration:
+- [ ] Calibrate CLAUDE.md/skills/memory so ANY plain-English prompt yields top-tier, tested,
+      layered output by default (top-in-every-compartment for pros AND non-devs).
+
+### Push status
+main is ff-merged locally through fb82be6 but NOT pushed: the gh token lacks `workflow`
+scope (refuses to push .github/workflows/*). User must run: `gh auth refresh -h github.com -s workflow`.
 
 ---
 
