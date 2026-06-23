@@ -35,11 +35,27 @@ AI-generated code to stay maintainable/performant/secure, usable by beginners AN
 
 ## Current state
 
-- **Active phase:** 0 — Calibration (COMPLETE, committing)
-- **Active branch:** `phase-0-calibration`
-- **Baseline:** GREEN (backend build+tests ok after fixing a pre-existing mock bug; tsc ok; vitest 25/25).
-- **Last action:** finished calibration (memory, skills, CLAUDE.md). Committing phase 0, then opening phase 1.
-- **Extra bugs found (to fix in phase 2 docs/hygiene):** Playwright config baseURL :3006 vs dev :3010; e2e specs log in as `admin@cleansaas.com` but seed creates `admin@cleansaas.dev`.
+- **Active phase:** 3 — Backend P0 (5 of 7 items done; 2 + Phase 4 remain)
+- **Active branch:** `phase-3-backend-p0`
+- **Baseline:** GREEN throughout (every commit passed go build + go test + gofmt + gates; pre-commit hook active).
+- **Phases 0,1,2 COMPLETE and committed.** Phase 3 in progress.
+- **Last action:** committed transactions/UoW (9f222a8). Gates pass.
+
+### Done in Phase 3 (each its own commit, verified green)
+- config fail-closed validation + scheduler panic recovery (b5e5ea1)
+- team IDOR fix (beb0a1d)
+- Stripe webhook idempotency + retry-safety (8c4b1c3) + gofmt of 3 pre-existing files (8e1571d)
+- atomic CreateTeam via DBTX + TxManager unit-of-work (9f222a8)
+
+### REMAINING (for next session — resume here)
+Phase 3 (P0) leftovers:
+- [ ] JWT refresh tokens + revocation (session_version / jti), iss/aud, short access TTL. BIG feature: migration + pkg/jwt + app/auth + middleware/auth + config + handler. Highest security value.
+- [ ] Per-query/per-external-call context timeouts (context.WithTimeout in repos + stop discarding ctx in stripe adapter). Cross-cutting, mechanical.
+- [ ] Optimistic locking (version column) on mutable aggregates + consistent RowsAffected checks.
+- [ ] Extend the TxManager pattern to the other multi-write flows (conversation+message; subscription+invoice) — pattern already established in 9f222a8.
+Phase 4 (targeted DDD) — entirely remaining:
+- [ ] Value objects (Email/Money/Slug/PlanInterval), rich billing + team aggregates, domain events, thin services; testcontainers integration tests.
+Recommend tackling JWT refresh first (security), then context timeouts, then Phase 4 DDD.
 
 ---
 
