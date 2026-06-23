@@ -17,7 +17,6 @@ Open-source boilerplate for medium-to-large SaaS applications.
 | Go               | **1.25+**       | Required by `backend/go.mod` |
 | Node.js          | **20+**         | A `.nvmrc` is present at the root |
 | Git              | latest          | **On Windows**: install [Git for Windows](https://gitforwindows.org) — provides Git Bash, required to run `make` |
-| Flutter          | optional        | Only if you work on `mobile/` |
 
 > **Windows users**: open all shell commands below either in **Git Bash** (recommended — `make` works) or in **PowerShell** (use the `.ps1` bootstrap script).
 
@@ -156,8 +155,9 @@ cleanSaaS/
 ├── backend/          Go + Chi, hexagonal — see backend/CLAUDE.md
 │   └── migrations/   Numbered up/down SQL files
 ├── admin/            Vite + React — see admin/CLAUDE.md
-├── mobile/           Flutter (optional)
-├── scripts/          bootstrap.sh / bootstrap.ps1
+├── docs/             ARCHITECTURE.md, ADRs, ops runbook
+├── scripts/          bootstrap.sh / bootstrap.ps1 · ci/ gate scripts · install-git-hooks.sh
+├── .github/          CI workflows + Dependabot
 ├── docker-compose.yml
 └── CLAUDE.md         Architecture rules and modularity philosophy
 ```

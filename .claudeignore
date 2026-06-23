@@ -1,0 +1,39 @@
+# Keep generated / build / noise out of the agent's context window.
+# (Smaller context = better, cheaper, more focused agent runs.)
+
+# Dependencies
+node_modules/
+backend/bin/
+
+# Build outputs
+.next/
+dist/
+build/
+out/
+
+# Test & coverage artifacts
+coverage/
+*.out
+frontend/test-results/
+frontend/playwright-report/
+frontend/blob-report/
+
+# Logs
+*.log
+npm-debug.log*
+
+# Lockfiles (huge, rarely useful to read)
+package-lock.json
+**/package-lock.json
+go.sum
+
+# Secrets / local env (never read these into context)
+.env
+.env.*
+!.env.example
+
+# OS / editor cruft
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

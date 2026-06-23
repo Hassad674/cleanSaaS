@@ -24,8 +24,6 @@
 | **E2E tests** | Playwright | Playwright | Tie |
 | **Deployment** | Railway, Fly.io, one-cmd | Vercel + Railway + Neon | Tie |
 | **Notifications in-app** | No | Yes (bell + dropdown) | **CleanSaaS** |
-| **Referral system** | No | Yes (built-in) | **CleanSaaS** |
-| **Mobile app** | No | React Native (shared backend) | **CleanSaaS** |
 | **i18n / Translation** | No | Yes (next-intl) | **CleanSaaS** |
 | **Real-time WebSocket** | No | Yes (gorilla/websocket, Hub pattern) | **CleanSaaS** |
 | **Rate limiting** | No | Yes (Go middleware) | **CleanSaaS** |
@@ -35,7 +33,7 @@
 | **Performance** | Node.js + Prisma ORM | Go + raw SQL + connection pooling | **CleanSaaS** — orders of magnitude faster |
 | **Modularity** | Monolithic, coupled | Every feature independently removable | **CleanSaaS** — future CLI `create-cleansaas` ready |
 
-**Bottom line:** OpenSaaS wins on quantity of integrations (5 OAuth providers, 3 payment providers). CleanSaaS wins on architecture quality, performance, modularity, and unique features (notifications, referral, mobile, i18n, real-time, analytics depth).
+**Bottom line:** OpenSaaS wins on quantity of integrations (5 OAuth providers, 3 payment providers). CleanSaaS wins on architecture quality, performance, modularity, mechanically-enforced conventions (CLAUDE.md + skills + CI gates + git hooks), and unique features (notifications, i18n, real-time, analytics depth).
 
 ---
 
@@ -201,11 +199,10 @@ These features add significant value and should be done soon after Phase 1.
 
 ### 2.3 — Referral / Parrainage System
 - **What**: Built-in referral system — unique referral codes, tracking, rewards (account credit or extended trial)
-- **Backend**: Migration (referrals table) + referral service + endpoints
-- **Frontend**: Referral dashboard, share link, referral stats
-- **API keys needed**: None (homemade system)
-- **Priority**: High (growth/marketing lever)
-- **Status**: 🔄 In progress
+- **Status**: ⛔ Removed from the default boilerplate. It was a complete, independent vertical slice and was
+  deleted (backend + migration 009 + frontend) to **demonstrate the "every feature is fully removable" promise**
+  (the build and tests stayed green). It's an ideal opt-in module for the future `create-cleansaas` CLI (3.2),
+  and the git history + `/add-feature` skill make re-adding it straightforward.
 
 ### 2.4 — i18n / Internationalization
 - **What**: Multi-language support using `next-intl`
@@ -230,11 +227,12 @@ These features add significant value and should be done soon after Phase 1.
 
 Additional features that would differentiate CleanSaaS further. Not committed to yet.
 
-### 3.1 — Mobile App (React Native)
-- **What**: Cross-platform mobile app sharing the same Go backend
-- **Tech**: React Native (Expo) — closest to the Next.js frontend skillset
-- **Shared**: Same API, same auth (JWT), same features
-- **Scope**: Auth, dashboard, AI chat, notifications, file upload
+### 3.1 — Mobile App
+- **What**: Cross-platform mobile app sharing the same Go backend (same REST/WS API, same JWT auth)
+- **Status**: ⛔ Removed from this repo. An earlier Flutter app lived under `mobile/` but was the least-mature
+  surface (half-wired navigation, no tests) and pulled in a second toolchain that worked against the
+  "ultra-accessible" goal. It was removed with **zero backend impact** (the API is client-agnostic). If
+  reintroduced, it belongs in its own repo or as an opt-in module — pick the framework deliberately at that point.
 
 ### 3.2 — CLI Tool (`create-cleansaas`)
 - **What**: Interactive CLI that lets users pick only the modules they want

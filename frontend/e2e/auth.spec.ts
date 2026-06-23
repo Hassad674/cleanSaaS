@@ -15,13 +15,13 @@ test.describe("Authentication", () => {
   });
 
   test("login with existing user", async ({ page }) => {
-    await login(page, "admin@cleansaas.com", "admin123");
+    await login(page, "admin@cleansaas.dev", "admin123");
     await expect(page).toHaveURL(/.*dashboard/);
   });
 
   test("login page shows error for wrong password", async ({ page }) => {
     await page.goto("/login");
-    await page.getByLabel("Email").fill("admin@cleansaas.com");
+    await page.getByLabel("Email").fill("admin@cleansaas.dev");
     await page.getByLabel("Password").fill("wrongpassword");
     await page.getByRole("button", { name: /sign in|log in/i }).click();
     await expect(page.getByText(/invalid|incorrect|error/i)).toBeVisible();

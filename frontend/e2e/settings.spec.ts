@@ -3,7 +3,7 @@ import { login } from "./helpers";
 
 test.describe("Settings", () => {
   test.beforeEach(async ({ page }) => {
-    await login(page, "admin@cleansaas.com", "admin123");
+    await login(page, "admin@cleansaas.dev", "admin123");
   });
 
   test("navigate to settings page", async ({ page }) => {

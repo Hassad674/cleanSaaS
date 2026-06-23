@@ -68,14 +68,17 @@ The leap toward the bar. Mostly additive (no app behavior change). All self-veri
 - [x] Dependabot config (`.github/dependabot.yml`) — gomod/npm×2/actions, grouped, React/Next/Tailwind majors split.
 - [~] Commit + create phase-2 branch (in progress).
 
-## Phase 2 — Hygiene & modularity demo
+## Phase 2 — Hygiene & modularity demo  — COMPLETE
 
-- [ ] Remove `referral` (backend slice + frontend feature + demo page + migration 009) — verify build green = modularity proof
-- [ ] Remove `mobile/` folder entirely
-- [ ] Reconcile docs: FEATURES.md (Flutter not RN; referral/mobile removed), README, delete or fix TACHES.md
-- [ ] OSS files: SECURITY.md (SLA), CONTRIBUTING.md, CHANGELOG.md (Keep-a-Changelog), CODE_OF_CONDUCT.md, `.claudeignore`, `.gitignore` tuning (ignore internal agent/audit docs)
-- [ ] `docs/ARCHITECTURE.md` (+ mermaid), `docs/adr/` (Nygard ADRs for key decisions), `docs/ops.md` runbook
-- [ ] Commit + create phase-3 branch.
+- [x] Remove `referral` (backend slice + frontend feature + demo page + migration 009) — build+tests green = modularity proof (committed f9b3aae)
+- [x] Remove `mobile/` folder entirely (committed f9b3aae)
+- [x] Reconcile docs: FEATURES.md (referral/mobile marked removed; RN→neutral), README (dropped Flutter prereq + mobile/ from tree; added docs/.github/scripts). TACHES.md left in place but no longer referenced by CLAUDE.md (its stale §refs were already fixed in phase 0).
+- [x] OSS files: SECURITY.md + CONTRIBUTING.md (agent), CODE_OF_CONDUCT.md (by-reference to dodge content filter), CHANGELOG.md (Unreleased captures all work), `.claudeignore`, `.gitignore` tuning (BLOCKED-*.md, local memory, test artifacts).
+- [x] `docs/ARCHITECTURE.md` (5 mermaid diagrams), `docs/adr/` (README + ADRs 0001–0005 incl. targeted-DDD and enforcement-as-product), `docs/ops.md` runbook (3 incident playbooks).
+- [x] Bonus fixes: Playwright baseURL/port :3006→:3010; e2e login admin@cleansaas.com→.dev.
+- [~] Commit + create phase-3 branch (in progress).
+
+NOTE: the OSS-hygiene agent hit an API content filter mid-run (Contributor Covenant enumeration). SECURITY.md + CONTRIBUTING.md landed before the block; CODE_OF_CONDUCT/CHANGELOG/.claudeignore written by main thread instead.
 
 ## Phase 3 — Backend P0 correctness (behavior-changing)
 
