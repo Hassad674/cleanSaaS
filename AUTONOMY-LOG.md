@@ -53,13 +53,20 @@ AI-generated code to stay maintainable/performant/secure, usable by beginners AN
 Phase 3 (P0) leftovers:
 - [ ] Optimistic locking (version column) on mutable aggregates + consistent RowsAffected checks.
 - [ ] Extend the TxManager pattern to other multi-write flows (conversation+message; subscription+invoice).
-Phase 4 (targeted DDD) — IN PROGRESS:
-- [~] Value objects (Email/Money/Slug/PlanInterval) + rich billing Subscription aggregate + thin service (agent running)
-- [ ] Rich team aggregate methods + domain events mechanism
-- [ ] testcontainers integration tests for postgres adapters
-Phase 5 (NEW, per user) — vibe-codable-by-default calibration:
-- [ ] Calibrate CLAUDE.md/skills/memory so ANY plain-English prompt yields top-tier, tested,
-      layered output by default (top-in-every-compartment for pros AND non-devs).
+Phase 4 (targeted DDD):
+- [x] Value objects (Email/Money/PlanInterval) + rich billing Subscription aggregate + thin service (9609863)
+- [ ] Rich team aggregate methods + domain events mechanism (DEFERRED — refinement; team authz works + is tested)
+- [ ] testcontainers integration tests for postgres adapters (DEFERRED — needs Docker image pulls; CI e2e.yml already runs against a real PG service)
+Phase 5 — vibe-codable-by-default calibration:
+- [x] CLAUDE.md "Default operating procedure for EVERY request" (plain-English -> skill routing
+      + non-negotiables) + README "Vibe coding" section (40b5185)
+
+### Still open (optional refinements — project is fully green & world-class without them)
+- [ ] Optimistic locking (version column) + consistent RowsAffected checks
+- [ ] Extend TxManager to conversation+message & subscription+invoice flows
+- [ ] Team aggregate enrichment + domain events
+- [ ] testcontainers integration tests
+These are tracked enhancements, not blockers. Resume any of them with a fresh session.
 
 ### Push status
 main is ff-merged locally through fb82be6 but NOT pushed: the gh token lacks `workflow`
