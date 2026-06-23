@@ -56,7 +56,7 @@ func main() {
 	// External services
 	var emailSvc service.EmailService
 	if cfg.ResendKey != "" {
-		emailSvc = resend.NewEmailService(cfg.ResendKey)
+		emailSvc = resend.NewEmailServiceWithTimeout(cfg.ResendKey, cfg.ExternalCallTimeout)
 	}
 
 	// Billing repositories + service (optional — only if Stripe key set)
@@ -66,7 +66,7 @@ func main() {
 		planRepo := postgres.NewPlanRepository(db)
 		invoiceRepo := postgres.NewInvoiceRepository(db)
 		processedEventRepo := postgres.NewProcessedEventRepository(db)
-		paymentSvc := adaptstripe.NewPaymentService(cfg.StripeKey, cfg.StripeWebhookSecret)
+		paymentSvc := adaptstripe.NewPaymentServiceWithTimeout(cfg.StripeKey, cfg.StripeWebhookSecret, cfg.ExternalCallTimeout)
 		billingSvc = appbilling.NewService(userRepo, subscriptionRepo, planRepo, invoiceRepo, processedEventRepo, paymentSvc, cfg.FrontendURL)
 	}
 
@@ -74,7 +74,7 @@ func main() {
 	var storageSvc *appstorage.Service
 	if cfg.R2AccessKey != "" {
 		r2Client := adaptr2.NewClient(cfg.R2AccountID, cfg.R2AccessKey, cfg.R2SecretKey)
-		r2Storage := adaptr2.NewStorageService(r2Client, cfg.R2BucketName, cfg.R2PublicURL)
+		r2Storage := adaptr2.NewStorageServiceWithTimeout(r2Client, cfg.R2BucketName, cfg.R2PublicURL, cfg.ExternalCallTimeout)
 		fileRepo := postgres.NewFileRepository(db)
 		storageSvc = appstorage.NewService(r2Storage, fileRepo)
 	}
@@ -87,7 +87,7 @@ func main() {
 		if err != nil {
 			logger.Error("failed to create Gemini client", slog.String("error", err.Error()))
 		} else {
-			geminiAI := adaptgemini.NewAIService(geminiClient)
+			geminiAI := adaptgemini.NewAIServiceWithTimeout(geminiClient, cfg.ExternalCallTimeout)
 			demoAI = geminiAI // expose for the public demo endpoint
 			conversationRepo := postgres.NewConversationRepository(db)
 			aiSvc = appai.NewService(conversationRepo, geminiAI)
@@ -140,8 +140,9 @@ func main() {
 		IdleTimeout:  60 * time.Second,
 	}
 
-	// Background job scheduler
-	scheduler := jobs.NewScheduler(logger)
+	// Background job scheduler. Each job invocation is bounded by cfg.JobTimeout
+	// so a stuck cleanup (slow query / hung call) can never run unbounded.
+	scheduler := jobs.NewSchedulerWithTimeout(logger, cfg.JobTimeout)
 	scheduler.Register(jobs.Job{
 		Name:     "clean-expired-password-resets",
 		Interval: 1 * time.Hour,

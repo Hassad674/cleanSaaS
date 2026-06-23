@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	stripego "github.com/stripe/stripe-go/v82"
 	"github.com/stripe/stripe-go/v82/billingportal/session"
@@ -13,25 +14,48 @@ import (
 	"github.com/stripe/stripe-go/v82/webhook"
 
 	"github.com/hassad/boilerplateSaaS/backend/internal/port/service"
+	"github.com/hassad/boilerplateSaaS/backend/pkg/ctxutil"
 )
 
 // Verify interface compliance at compile time.
 var _ service.PaymentService = (*PaymentService)(nil)
 
+// defaultCallTimeout is the fallback per-call ceiling used when a PaymentService
+// is constructed without an explicit timeout (e.g. NewPaymentService).
+const defaultCallTimeout = 15 * time.Second
+
 type PaymentService struct {
 	webhookSecret string
+	callTimeout   time.Duration
 }
 
 func NewPaymentService(apiKey, webhookSecret string) *PaymentService {
-	Init(apiKey)
-	return &PaymentService{webhookSecret: webhookSecret}
+	return NewPaymentServiceWithTimeout(apiKey, webhookSecret, defaultCallTimeout)
 }
 
-func (s *PaymentService) CreateCustomer(_ context.Context, email, name string) (string, error) {
+// NewPaymentServiceWithTimeout builds a PaymentService that bounds every Stripe
+// SDK call to callTimeout (a ceiling; a nearer caller deadline still wins).
+func NewPaymentServiceWithTimeout(apiKey, webhookSecret string, callTimeout time.Duration) *PaymentService {
+	Init(apiKey)
+	return &PaymentService{webhookSecret: webhookSecret, callTimeout: callTimeout}
+}
+
+// withTimeout derives a context bounded by the configured per-call timeout. The
+// returned context is wired into the Stripe params (params.Context) so the SDK's
+// HTTP request honors cancellation/deadlines.
+func (s *PaymentService) withTimeout(ctx context.Context) (context.Context, context.CancelFunc) {
+	return ctxutil.WithTimeout(ctx, s.callTimeout)
+}
+
+func (s *PaymentService) CreateCustomer(ctx context.Context, email, name string) (string, error) {
+	ctx, cancel := s.withTimeout(ctx)
+	defer cancel()
+
 	params := &stripego.CustomerParams{
 		Email: stripego.String(email),
 		Name:  stripego.String(name),
 	}
+	params.Context = ctx
 	c, err := customer.New(params)
 	if err != nil {
 		return "", fmt.Errorf("creating stripe customer: %w", err)
@@ -39,7 +63,10 @@ func (s *PaymentService) CreateCustomer(_ context.Context, email, name string) (
 	return c.ID, nil
 }
 
-func (s *PaymentService) CreateCheckoutSession(_ context.Context, customerID, priceID, successURL, cancelURL string) (string, error) {
+func (s *PaymentService) CreateCheckoutSession(ctx context.Context, customerID, priceID, successURL, cancelURL string) (string, error) {
+	ctx, cancel := s.withTimeout(ctx)
+	defer cancel()
+
 	params := &stripego.CheckoutSessionParams{
 		Customer: stripego.String(customerID),
 		Mode:     stripego.String(string(stripego.CheckoutSessionModeSubscription)),
@@ -52,6 +79,7 @@ func (s *PaymentService) CreateCheckoutSession(_ context.Context, customerID, pr
 		SuccessURL: stripego.String(successURL),
 		CancelURL:  stripego.String(cancelURL),
 	}
+	params.Context = ctx
 	sess, err := checkout.New(params)
 	if err != nil {
 		return "", fmt.Errorf("creating checkout session: %w", err)
@@ -59,7 +87,10 @@ func (s *PaymentService) CreateCheckoutSession(_ context.Context, customerID, pr
 	return sess.URL, nil
 }
 
-func (s *PaymentService) CreateCheckoutSessionWithMode(_ context.Context, customerID, priceID, successURL, cancelURL string, mode service.CheckoutMode) (string, error) {
+func (s *PaymentService) CreateCheckoutSessionWithMode(ctx context.Context, customerID, priceID, successURL, cancelURL string, mode service.CheckoutMode) (string, error) {
+	ctx, cancel := s.withTimeout(ctx)
+	defer cancel()
+
 	stripeMode := string(stripego.CheckoutSessionModeSubscription)
 	if mode == service.CheckoutModePayment {
 		stripeMode = string(stripego.CheckoutSessionModePayment)
@@ -77,6 +108,7 @@ func (s *PaymentService) CreateCheckoutSessionWithMode(_ context.Context, custom
 		SuccessURL: stripego.String(successURL),
 		CancelURL:  stripego.String(cancelURL),
 	}
+	params.Context = ctx
 	sess, err := checkout.New(params)
 	if err != nil {
 		return "", fmt.Errorf("creating checkout session with mode: %w", err)
@@ -84,7 +116,10 @@ func (s *PaymentService) CreateCheckoutSessionWithMode(_ context.Context, custom
 	return sess.URL, nil
 }
 
-func (s *PaymentService) CreateGuestCheckoutSession(_ context.Context, priceID, successURL, cancelURL string, mode service.CheckoutMode) (string, error) {
+func (s *PaymentService) CreateGuestCheckoutSession(ctx context.Context, priceID, successURL, cancelURL string, mode service.CheckoutMode) (string, error) {
+	ctx, cancel := s.withTimeout(ctx)
+	defer cancel()
+
 	stripeMode := string(stripego.CheckoutSessionModeSubscription)
 	if mode == service.CheckoutModePayment {
 		stripeMode = string(stripego.CheckoutSessionModePayment)
@@ -101,6 +136,7 @@ func (s *PaymentService) CreateGuestCheckoutSession(_ context.Context, priceID, 
 		SuccessURL: stripego.String(successURL),
 		CancelURL:  stripego.String(cancelURL),
 	}
+	params.Context = ctx
 	sess, err := checkout.New(params)
 	if err != nil {
 		return "", fmt.Errorf("creating guest checkout session: %w", err)
@@ -108,11 +144,15 @@ func (s *PaymentService) CreateGuestCheckoutSession(_ context.Context, priceID, 
 	return sess.URL, nil
 }
 
-func (s *PaymentService) CreateBillingPortalSession(_ context.Context, customerID, returnURL string) (string, error) {
+func (s *PaymentService) CreateBillingPortalSession(ctx context.Context, customerID, returnURL string) (string, error) {
+	ctx, cancel := s.withTimeout(ctx)
+	defer cancel()
+
 	params := &stripego.BillingPortalSessionParams{
 		Customer:  stripego.String(customerID),
 		ReturnURL: stripego.String(returnURL),
 	}
+	params.Context = ctx
 	sess, err := session.New(params)
 	if err != nil {
 		return "", fmt.Errorf("creating billing portal session: %w", err)
@@ -120,10 +160,14 @@ func (s *PaymentService) CreateBillingPortalSession(_ context.Context, customerI
 	return sess.URL, nil
 }
 
-func (s *PaymentService) CancelSubscription(_ context.Context, subscriptionID string) error {
+func (s *PaymentService) CancelSubscription(ctx context.Context, subscriptionID string) error {
+	ctx, cancel := s.withTimeout(ctx)
+	defer cancel()
+
 	params := &stripego.SubscriptionParams{
 		CancelAtPeriodEnd: stripego.Bool(true),
 	}
+	params.Context = ctx
 	_, err := subscription.Update(subscriptionID, params)
 	if err != nil {
 		return fmt.Errorf("canceling subscription: %w", err)
@@ -131,9 +175,13 @@ func (s *PaymentService) CancelSubscription(_ context.Context, subscriptionID st
 	return nil
 }
 
-func (s *PaymentService) RetrieveCheckoutSession(_ context.Context, sessionID string) (*service.CheckoutSessionInfo, error) {
+func (s *PaymentService) RetrieveCheckoutSession(ctx context.Context, sessionID string) (*service.CheckoutSessionInfo, error) {
+	ctx, cancel := s.withTimeout(ctx)
+	defer cancel()
+
 	params := &stripego.CheckoutSessionParams{}
 	params.AddExpand("line_items")
+	params.Context = ctx
 
 	sess, err := checkout.Get(sessionID, params)
 	if err != nil {

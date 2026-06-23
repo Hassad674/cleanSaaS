@@ -63,6 +63,9 @@ func (r *PasswordResetRepository) MarkUsed(ctx context.Context, id string) error
 }
 
 func (r *PasswordResetRepository) DeleteExpired(ctx context.Context) error {
+	ctx, cancel := ctxWithTimeout(ctx, defaultDBTimeout)
+	defer cancel()
+
 	_, err := r.db.ExecContext(ctx,
 		`DELETE FROM password_resets WHERE expires_at < NOW() OR used = true`,
 	)

@@ -4,12 +4,19 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"time"
 
 	"github.com/google/generative-ai-go/genai"
 
 	"github.com/hassad/boilerplateSaaS/backend/internal/domain/ai"
 	"github.com/hassad/boilerplateSaaS/backend/internal/port/service"
+	"github.com/hassad/boilerplateSaaS/backend/pkg/ctxutil"
 )
+
+// defaultCallTimeout is the fallback per-call ceiling used when an AIService is
+// constructed without an explicit timeout. It applies to non-streaming Chat
+// only — Stream is deliberately exempt (see Stream for the rationale).
+const defaultCallTimeout = 15 * time.Second
 
 // defaultSystemInstruction is set on every model to provide broad,
 // helpful behaviour across all topics.
@@ -24,14 +31,23 @@ Guidelines:
 - Adapt your response length to the complexity of the question — short for simple questions, detailed for complex ones`
 
 type AIService struct {
-	client *genai.Client
-	model  string
+	client      *genai.Client
+	model       string
+	callTimeout time.Duration
 }
 
 func NewAIService(client *genai.Client) *AIService {
+	return NewAIServiceWithTimeout(client, defaultCallTimeout)
+}
+
+// NewAIServiceWithTimeout builds an AIService that bounds non-streaming Chat
+// calls to callTimeout (a ceiling; a nearer caller deadline still wins).
+// Streaming (Stream) is intentionally NOT bounded by this timeout.
+func NewAIServiceWithTimeout(client *genai.Client, callTimeout time.Duration) *AIService {
 	return &AIService{
-		client: client,
-		model:  "gemini-2.5-flash",
+		client:      client,
+		model:       "gemini-2.5-flash",
+		callTimeout: callTimeout,
 	}
 }
 
@@ -44,6 +60,9 @@ func (s *AIService) configureModel(model *genai.GenerativeModel) {
 }
 
 func (s *AIService) Chat(ctx context.Context, messages []ai.Message) (*service.AIResponse, error) {
+	ctx, cancel := ctxutil.WithTimeout(ctx, s.callTimeout)
+	defer cancel()
+
 	model := s.client.GenerativeModel(s.model)
 	s.configureModel(model)
 
@@ -69,6 +88,11 @@ func (s *AIService) Chat(ctx context.Context, messages []ai.Message) (*service.A
 	}, nil
 }
 
+// Stream streams an AI response chunk-by-chunk to writer. It deliberately does
+// NOT apply the per-call timeout: a long, legitimate generation can far exceed
+// any short ceiling, and clamping it would truncate valid output mid-stream.
+// Cancellation is instead governed by the incoming ctx (request lifecycle) and
+// the HTTP server's WriteTimeout, so a genuinely dead connection still unwinds.
 func (s *AIService) Stream(ctx context.Context, messages []ai.Message, writer io.Writer) error {
 	model := s.client.GenerativeModel(s.model)
 	s.configureModel(model)

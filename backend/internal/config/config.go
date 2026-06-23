@@ -29,6 +29,13 @@ type Config struct {
 	JWTIssuer       string        // "iss" claim (default "cleansaas")
 	JWTAudience     string        // "aud" claim (default "cleansaas")
 
+	// Timeout/cancellation discipline. These bound work that would otherwise run
+	// unbounded: hung external API calls and background jobs without a request
+	// deadline. They impose a CEILING only — a nearer caller deadline always wins.
+	ExternalCallTimeout time.Duration // per-call ceiling for Stripe/Resend/R2/Gemini-Chat (default 15s)
+	JobTimeout          time.Duration // per-invocation ceiling for scheduler jobs (default 30s)
+	DBQueryTimeout      time.Duration // default ceiling for background DB ops with no deadline (default 15s)
+
 	// Stripe
 	StripeKey           string
 	StripeWebhookSecret string
@@ -65,6 +72,9 @@ func Load() *Config {
 		RefreshTokenTTL:     envDuration("REFRESH_TOKEN_TTL", 720*time.Hour),
 		JWTIssuer:           env("JWT_ISSUER", "cleansaas"),
 		JWTAudience:         env("JWT_AUDIENCE", "cleansaas"),
+		ExternalCallTimeout: envDuration("EXTERNAL_CALL_TIMEOUT", 15*time.Second),
+		JobTimeout:          envDuration("JOB_TIMEOUT", 30*time.Second),
+		DBQueryTimeout:      envDuration("DB_QUERY_TIMEOUT", 15*time.Second),
 		StripeKey:           env("STRIPE_SECRET_KEY", ""),
 		StripeWebhookSecret: env("STRIPE_WEBHOOK_SECRET", ""),
 		ResendKey:           env("RESEND_API_KEY", ""),

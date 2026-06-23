@@ -75,6 +75,9 @@ func (r *RefreshTokenRepository) RevokeAllForUser(ctx context.Context, userID st
 }
 
 func (r *RefreshTokenRepository) DeleteExpired(ctx context.Context) error {
+	ctx, cancel := ctxWithTimeout(ctx, defaultDBTimeout)
+	defer cancel()
+
 	_, err := r.db.ExecContext(ctx,
 		`DELETE FROM refresh_tokens WHERE expires_at < NOW() OR revoked_at IS NOT NULL`,
 	)

@@ -7,26 +7,55 @@ import (
 	"runtime/debug"
 	"sync"
 	"time"
+
+	"github.com/hassad/boilerplateSaaS/backend/pkg/ctxutil"
 )
+
+// defaultJobTimeout bounds a single job invocation when neither the Job nor the
+// Scheduler specifies one, so a stuck cleanup can never run forever.
+const defaultJobTimeout = 30 * time.Second
 
 type Job struct {
 	Name     string
 	Interval time.Duration
 	Fn       func(ctx context.Context) error
+
+	// Timeout bounds a single invocation of this job. When zero, the scheduler's
+	// default (jobTimeout) applies. A negative value disables the timeout for a
+	// genuinely long-running job (use with care).
+	Timeout time.Duration
 }
 
 type Scheduler struct {
-	jobs   []Job
-	stop   chan struct{}
-	wg     sync.WaitGroup
-	logger *slog.Logger
+	jobs       []Job
+	stop       chan struct{}
+	wg         sync.WaitGroup
+	logger     *slog.Logger
+	jobTimeout time.Duration
 }
 
 func NewScheduler(logger *slog.Logger) *Scheduler {
+	return NewSchedulerWithTimeout(logger, defaultJobTimeout)
+}
+
+// NewSchedulerWithTimeout builds a Scheduler whose jobs are each bounded by
+// jobTimeout unless a Job overrides it via its own Timeout field.
+func NewSchedulerWithTimeout(logger *slog.Logger, jobTimeout time.Duration) *Scheduler {
 	return &Scheduler{
-		stop:   make(chan struct{}),
-		logger: logger,
+		stop:       make(chan struct{}),
+		logger:     logger,
+		jobTimeout: jobTimeout,
 	}
+}
+
+// jobTimeoutFor resolves the effective timeout for a job: an explicit per-job
+// Timeout wins, otherwise the scheduler default. A negative value means "no
+// timeout" and is passed through so the job context carries no deadline.
+func (s *Scheduler) jobTimeoutFor(job Job) time.Duration {
+	if job.Timeout != 0 {
+		return job.Timeout
+	}
+	return s.jobTimeout
 }
 
 func (s *Scheduler) Register(job Job) {
@@ -79,9 +108,14 @@ func (s *Scheduler) runJob(ctx context.Context, job Job) {
 	}
 }
 
-// executeOnce runs a single job invocation and recovers from panics, so a single bad
-// job tick can never crash the process or permanently kill the scheduler goroutine.
+// executeOnce runs a single job invocation with a bounded context and recovers
+// from panics, so a single bad job tick can neither run forever nor crash the
+// process / permanently kill the scheduler goroutine. The per-job deadline is
+// derived via ctxutil.WithTimeout (a ceiling — a nearer parent deadline wins).
 func (s *Scheduler) executeOnce(ctx context.Context, job Job) (err error) {
+	ctx, cancel := ctxutil.WithTimeout(ctx, s.jobTimeoutFor(job))
+	defer cancel()
+
 	defer func() {
 		if r := recover(); r != nil {
 			s.logger.Error("job panicked (recovered)",

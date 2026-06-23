@@ -48,6 +48,9 @@ func (r *EmailVerificationRepository) DeleteByUserID(ctx context.Context, userID
 }
 
 func (r *EmailVerificationRepository) DeleteExpired(ctx context.Context) error {
+	ctx, cancel := ctxWithTimeout(ctx, defaultDBTimeout)
+	defer cancel()
+
 	query := `DELETE FROM email_verifications WHERE expires_at < NOW()`
 	if _, err := r.db.ExecContext(ctx, query); err != nil {
 		return fmt.Errorf("deleting expired email verifications: %w", err)
