@@ -2,7 +2,9 @@ package jobs
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
+	"runtime/debug"
 	"sync"
 	"time"
 )
@@ -61,7 +63,7 @@ func (s *Scheduler) runJob(ctx context.Context, job Job) {
 			return
 		case <-ticker.C:
 			start := time.Now()
-			if err := job.Fn(ctx); err != nil {
+			if err := s.executeOnce(ctx, job); err != nil {
 				s.logger.Error("job failed",
 					slog.String("name", job.Name),
 					slog.String("error", err.Error()),
@@ -75,4 +77,20 @@ func (s *Scheduler) runJob(ctx context.Context, job Job) {
 			}
 		}
 	}
+}
+
+// executeOnce runs a single job invocation and recovers from panics, so a single bad
+// job tick can never crash the process or permanently kill the scheduler goroutine.
+func (s *Scheduler) executeOnce(ctx context.Context, job Job) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			s.logger.Error("job panicked (recovered)",
+				slog.String("name", job.Name),
+				slog.Any("panic", r),
+				slog.String("stack", string(debug.Stack())),
+			)
+			err = fmt.Errorf("job %q panicked: %v", job.Name, r)
+		}
+	}()
+	return job.Fn(ctx)
 }
